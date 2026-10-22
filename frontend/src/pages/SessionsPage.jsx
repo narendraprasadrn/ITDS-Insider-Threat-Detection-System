@@ -89,7 +89,7 @@ export default function SessionsPage() {
     setError(null);
     try {
       // 1. Fetch available profiles for user
-      const profRes = await fetch('/profiles/available', {
+      const profRes = await fetch('/api/profiles/available', {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const profData = await profRes.json();
@@ -118,8 +118,9 @@ export default function SessionsPage() {
         if (pendRes.ok && pendData.success) setPendingRequests(pendData.data.requests);
         if (actRes.ok && actData.success) setActiveSessions(actData.data.sessions);
       }
-    } catch {
-      setError('Network error while refreshing sessions data');
+    } catch (err) {
+      console.error('Error refreshing sessions data:', err);
+      setError(err.message || 'Error refreshing sessions data');
     } finally {
       setLoading(false);
     }

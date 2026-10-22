@@ -75,7 +75,7 @@ export default function ProfilesPage() {
     setError(null);
     try {
       // 1. Fetch available profiles for current user's role
-      const availRes = await fetch('/profiles/available', {
+      const availRes = await fetch('/api/profiles/available', {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const availData = await availRes.json();
