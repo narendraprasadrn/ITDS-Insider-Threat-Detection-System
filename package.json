@@ -1,0 +1,17 @@
+{
+  "name": "insider-threat-detection-system",
+  "version": "1.0.0",
+  "description": "Insider Threat Detection System (academic prototype)",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "verify:phase1": "node --input-type=module -e \"import('./scripts/verify_phase1.js')\""
+  }
+}

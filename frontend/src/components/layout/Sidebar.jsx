@@ -1,0 +1,109 @@
+// frontend/src/components/layout/Sidebar.jsx
+import React from 'react';
+import {
+  Drawer,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Toolbar,
+  Divider,
+  Box,
+  Typography,
+  Chip
+} from '@mui/material';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import LockOpenIcon from '@mui/icons-material/LockOpen';
+import StorageIcon from '@mui/icons-material/Storage';
+import RuleIcon from '@mui/icons-material/Rule';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import WarningIcon from '@mui/icons-material/Warning';
+import HealthAndSafetyIcon from '@mui/icons-material/HealthAndSafety';
+import { useLocation, useNavigate } from 'react-router-dom';
+
+const DRAWER_WIDTH = 260;
+
+const menuItems = [
+  { text: 'System Status', icon: <HealthAndSafetyIcon />, path: '/', active: true, phase: 'Phase 1' },
+  { text: 'Auth & RBAC', icon: <LockOpenIcon />, path: '/auth', active: false, phase: 'Phase 2' },
+  { text: 'Access Profiles', icon: <StorageIcon />, path: '/profiles', active: false, phase: 'Phase 3' },
+  { text: 'OPA Policies', icon: <RuleIcon />, path: '/policies', active: false, phase: 'Phase 4' },
+  { text: 'JIT Sessions', icon: <DashboardIcon />, path: '/sessions', active: false, phase: 'Phase 5' },
+  { text: 'SQL Activity Log', icon: <VisibilityIcon />, path: '/sql-events', active: false, phase: 'Phase 6' },
+  { text: 'Threat & Risk Feed', icon: <WarningIcon />, path: '/threats', active: false, phase: 'Phase 8' }
+];
+
+export default function Sidebar({ open, onClose, variant = 'permanent' }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  return (
+    <Drawer
+      variant={variant}
+      open={open}
+      onClose={onClose}
+      sx={{
+        width: DRAWER_WIDTH,
+        flexShrink: 0,
+        [`& .MuiDrawer-paper`]: {
+          width: DRAWER_WIDTH,
+          boxSizing: 'border-box'
+        }
+      }}
+    >
+      <Toolbar />
+      <Box sx={{ p: 2 }}>
+        <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1.2 }}>
+          Navigation Shell
+        </Typography>
+      </Box>
+      <Divider />
+      <List sx={{ px: 1 }}>
+        {menuItems.map((item) => {
+          const isCurrent = location.pathname === item.path;
+          return (
+            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+              <ListItemButton
+                selected={isCurrent}
+                onClick={() => navigate(item.path)}
+                disabled={!item.active && !isCurrent}
+                sx={{
+                  borderRadius: 1.5,
+                  '&.Mui-selected': {
+                    backgroundColor: 'rgba(2, 136, 209, 0.16)',
+                    color: 'primary.light',
+                    '&:hover': {
+                      backgroundColor: 'rgba(2, 136, 209, 0.24)'
+                    }
+                  }
+                }}
+              >
+                <ListItemIcon sx={{ color: isCurrent ? 'primary.light' : 'text.secondary', minWidth: 40 }}>
+                  {item.icon}
+                </ListItemIcon>
+                <ListItemText
+                  primary={item.text}
+                  primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: isCurrent ? 600 : 400 }}
+                />
+                {!item.active && (
+                  <Chip
+                    label={item.phase}
+                    size="small"
+                    sx={{ height: 20, fontSize: '0.65rem', backgroundColor: 'rgba(255,255,255,0.06)' }}
+                  />
+                )}
+              </ListItemButton>
+            </ListItem>
+          );
+        })}
+      </List>
+      <Box sx={{ mt: 'auto', p: 2 }}>
+        <Typography variant="caption" color="text.secondary" display="block">
+          Architecture: Node ESM + OPA + MySQL 8
+        </Typography>
+      </Box>
+    </Drawer>
+  );
+}
+export { DRAWER_WIDTH };
