@@ -18,6 +18,42 @@ export default defineConfig({
       '/auth': {
         target: 'http://localhost:5000',
         changeOrigin: true
+      },
+      '/profiles': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/policy': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/access-requests': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/sessions': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/sql-events': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/violations': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/stream': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/risk-scores': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/alerts': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
       }
     }
   }
