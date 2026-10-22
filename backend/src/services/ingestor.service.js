@@ -2,6 +2,7 @@
 import { pool } from '../db/pool.js';
 import { sqlParserService } from './sqlParser.service.js';
 import { violationService } from './violation.service.js';
+import { riskEngineService } from './riskEngine.service.js';
 import { logger } from '../config/logger.js';
 
 class IngestorService {
@@ -169,6 +170,15 @@ class IngestorService {
           await violationService.evaluateEvent(eventPayload, sessionRow);
         } catch (evalErr) {
           logger.error({ err: evalErr, eventId }, 'Policy evaluation failed for ingested event');
+        }
+
+        // 7. Update Session Risk Score & Evaluate Threat Detectors
+        if (sessionId) {
+          try {
+            await riskEngineService.evaluateSessionRisk(sessionId);
+          } catch (riskErr) {
+            logger.error({ err: riskErr, sessionId }, 'Risk engine evaluation failed for session');
+          }
         }
 
         // Notify listeners

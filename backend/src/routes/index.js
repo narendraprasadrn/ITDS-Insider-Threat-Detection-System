@@ -10,6 +10,7 @@ import accessRequestRoutes from './accessRequest.routes.js';
 import sessionRoutes from './session.routes.js';
 import sqlEventRoutes from './sqlEvent.routes.js';
 import violationRoutes from './violation.routes.js';
+import riskRoutes from './risk.routes.js';
 
 const router = Router();
 
@@ -23,5 +24,6 @@ router.use('/access-requests', accessRequestRoutes);
 router.use('/sessions', sessionRoutes);
 router.use('/sql-events', sqlEventRoutes);
 router.use('/violations', violationRoutes);
+router.use('/', riskRoutes);
 
 export default router;

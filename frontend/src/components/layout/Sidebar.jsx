@@ -51,7 +51,7 @@ export default function Sidebar({ open, onClose, variant = 'permanent' }) {
     { text: 'JIT Sessions', icon: <LockOpenIcon />, path: '/sessions', active: true, phase: 'Phase 5' },
     { text: 'SQL Activity Log', icon: <VisibilityIcon />, path: '/sql-events', active: true, phase: 'Phase 6' },
     { text: 'Policy Violations', icon: <PolicyIcon />, path: '/violations', active: true, phase: 'Phase 7' },
-    { text: 'Threat & Risk Feed', icon: <WarningIcon />, path: '/threats', active: false, phase: 'Phase 8' }
+    { text: 'Threat & Risk Feed', icon: <WarningIcon />, path: '/threats', active: true, phase: 'Phase 8' }
   ];
 
   return (

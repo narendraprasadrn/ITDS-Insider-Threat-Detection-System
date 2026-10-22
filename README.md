@@ -683,6 +683,76 @@ PASS: 14/14
 
 ---
 
+## Phase 8: Threat Detection Engine and Risk Scoring
+
+### What Was Built
+- **Database Telemetry & Baseline Storage (`backend/db/migrations/008_threat_detection.sql`)**:
+  - `user_baselines` table: Stores rolling user activity profiles (`avg_velocity_qpm`, `typical_tables`, `typical_hours_start`, `typical_hours_end`, `sample_size_queries`).
+  - `session_risk_scores` table: Stores calculated 0–100 risk scores, severity levels (`low`, `medium`, `high`, `critical`), and fully explainable breakdown JSON structures (`rule_id`, `weight`, `evidence_event_ids`, `explanation`).
+  - `alerts` table: Persistent security incident records (`session_id`, `user_id`, `risk_score`, `title`, `description`, `status`: `open` | `investigating` | `closed`, `severity`, `evidence`, `analyst_notes`).
+- **6 Modular Pure Detector Functions (`backend/src/services/detectors/`)**:
+  1. `high_query_velocity` (Weight: 25): Evaluates query execution frequency over sliding time windows against user baseline QPM multiplied by threshold.
+  2. `bulk_export` (Weight: 30): Flags unbounded `SELECT *` without `WHERE` or `LIMIT`, or large row volume queries.
+  3. `off_hours_activity` (Weight: 20): Flags queries executed outside the user's historical business-hours schedule.
+  4. `out_of_profile_table` (Weight: 25): Flags queries targeting tables outside historical profile norms (e.g. standard developer touching payroll data).
+  5. `rapid_failed_queries` (Weight: 25): Identifies bursts of syntax failures or `blocked_by_db` permission errors indicating permission enumeration or injection probing.
+  6. `cross_schema_read` (Weight: 30): Flags queries crossing database namespaces or referencing restricted internal catalogs (`mysql.*`, `information_schema.*`).
+- **Explainable Risk Scoring Engine (`backend/src/services/riskEngine.service.js`)**:
+  - Pure deterministic aggregator computing aggregate session score clamped to [0, 100].
+  - Evaluates user baselines dynamically and produces a structured explainability breakdown mapping every point of risk to triggering detector weights and SQL event IDs.
+  - Alert deduplication: Automatically generates and updates security alerts when session score reaches threshold &ge; 70 without duplicate alert spam.
+- **REST API Endpoints (`backend/src/routes/risk.routes.js`)**:
+  - `GET /risk-scores`: Filter by `session_id`, `user_id`, `risk_level`.
+  - `GET /risk-scores/:sessionId`: Deep-dive audit explainability for a single session.
+  - `GET /alerts`: Filter by `status`, `severity`, `session_id`.
+  - `PATCH /alerts/:id`: Transition lifecycle status (`open` &rarr; `investigating` &rarr; `closed`) and append analyst notes.
+  - Restricted to audit roles: `admin`, `security_analyst`.
+- **Frontend Threat Feed & Alert Triage Console (`frontend/src/pages/ThreatFeedPage.jsx`)**:
+  - Real-time metrics: Active Security Alerts, High/Critical Risk Sessions, Evaluated Sessions Count, Average Risk Score.
+  - Tab 0: Security Alerts Queue with linear risk indicators, severity chips, and 1-click status transitions ("Investigate", "Resolve").
+  - Tab 1: Session Risk Scores table displaying real-time risk scores with color-coded progress bars and detector chips.
+  - Deep Explainability Audit Dialog displaying every fired detector, risk contribution weight (+20, +25, +30), rationale, and linked evidence SQL event IDs.
+
+---
+
+### How to Test and Verify
+
+#### 1. Automated Integration Tests
+```bash
+cd backend
+npm test -- tests/riskEngine.test.js
+```
+
+Expected output:
+```
+PASS tests/riskEngine.test.js
+  Phase 8 Threat Detection Engine & Risk Scoring Tests
+    Pure Detector Functions with Fixture Event Streams
+      √ detectHighQueryVelocity fires when QPM exceeds 2x baseline (5 ms)
+      √ detectHighQueryVelocity returns null for nominal query rate (1 ms)
+      √ detectBulkExport fires for unbounded SELECT * queries (2 ms)
+      √ detectBulkExport returns null for bounded queries (1 ms)
+      √ detectOffHoursActivity fires for queries executed late at night (3 ms)
+      √ detectOffHoursActivity returns null for business-hours queries (1 ms)
+      √ detectOutOfProfileTable fires when accessing unprofiled tables (1 ms)
+      √ detectOutOfProfileTable returns null for typical tables (2 ms)
+      √ detectRapidFailedQueries fires for multiple blocked or denied queries (2 ms)
+      √ detectCrossSchemaRead fires when accessing system or cross schemas (1 ms)
+    Deterministic & Fully Explainable Risk Score Aggregation
+      √ aggregates multiple fired detectors into a deterministic score and breakdown (3 ms)
+      √ caps aggregate score at 100 (1 ms)
+    End-to-End Alert Workflow & Deduplication
+      √ evaluates session risk and creates a security alert for score >= 70 (31 ms)
+      √ deduplicates alerts for subsequent evaluations of the same session (13 ms)
+      √ transitions alert status via PATCH /alerts/:id (26 ms)
+      √ denies access to /alerts and /risk-scores for non-analyst roles (17 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       16 passed, 16 total
+```
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Scaffold and infrastructure** (Completed)
@@ -692,6 +762,6 @@ PASS: 14/14
 - [x] **Phase 5: JIT sessions and MySQL user provisioning** (Completed)
 - [x] **Phase 6: SQL activity ingestion** (Completed)
 - [x] **Phase 7: Policy evaluation of observed queries** (Completed)
-- [ ] **Phase 8: Threat detection engine and risk scoring**
+- [x] **Phase 8: Threat detection engine and risk scoring** (Completed)
 - [ ] **Phase 9: Real-time pipeline and admin dashboard**
 - [ ] **Phase 10: Attack simulation, testing, and demo hardening**

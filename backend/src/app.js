@@ -12,6 +12,7 @@ import accessRequestRoutes from './routes/accessRequest.routes.js';
 import sessionRoutes from './routes/session.routes.js';
 import sqlEventRoutes from './routes/sqlEvent.routes.js';
 import violationRoutes from './routes/violation.routes.js';
+import riskRoutes from './routes/risk.routes.js';
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.use('/access-requests', accessRequestRoutes);
 app.use('/sessions', sessionRoutes);
 app.use('/sql-events', sqlEventRoutes);
 app.use('/violations', violationRoutes);
+app.use('/', riskRoutes);
 
 // Full API routes prefix
 app.use('/api', apiRoutes);

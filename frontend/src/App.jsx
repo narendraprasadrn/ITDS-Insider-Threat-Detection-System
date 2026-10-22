@@ -14,6 +14,7 @@ import PoliciesPage from './pages/PoliciesPage.jsx';
 import SessionsPage from './pages/SessionsPage.jsx';
 import SqlEventsPage from './pages/SqlEventsPage.jsx';
 import ViolationsPage from './pages/ViolationsPage.jsx';
+import ThreatFeedPage from './pages/ThreatFeedPage.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -41,6 +42,7 @@ export default function App() {
               <Route path="sessions" element={<SessionsPage />} />
               <Route path="sql-events" element={<SqlEventsPage />} />
               <Route path="violations" element={<ViolationsPage />} />
+              <Route path="threats" element={<ThreatFeedPage />} />
               <Route
                 path="users"
                 element={
