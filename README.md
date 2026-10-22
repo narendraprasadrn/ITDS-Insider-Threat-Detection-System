@@ -558,6 +558,68 @@ Tests:       8 passed, 8 total
 
 ---
 
+## Phase 6: SQL Activity Ingestion
+
+### What Was Built
+- **Database Telemetry Storage (`backend/db/migrations/006_sql_events.sql`)**:
+  - `sql_events` table capturing server-side query execution logs: `id`, `session_id`, `user_id`, `mysql_username`, `thread_id`, `event_time`, `raw_sql`, `normalized_sql`, `operation`, `tables`, `flags`, `status`, and timestamps.
+  - `ingest_watermark` table tracking persistent high-water mark (`last_event_time`, `last_thread_id`) to guarantee zero duplicate query ingestion across restarts.
+- **SQL Parser Service (`backend/src/services/sqlParser.service.js`)**:
+  - AST parsing via `node-sql-parser` for MySQL dialect with a regex-based fallback engine.
+  - Normalization: parameterizes literals (`SELECT * FROM users WHERE id = 12` -> `SELECT * FROM users WHERE id = ?`).
+  - AST table extraction: extracts fully-qualified or unqualified tables (`target_db.customers` -> `["target_db.customers"]`).
+  - Flag identification:
+    - `is_unbounded_read`: flags `SELECT` queries without a `WHERE` clause and without a `LIMIT` clause.
+    - `is_cross_schema`: flags queries referencing tables across multiple distinct database schemas or system schemas.
+    - `is_ddl`: flags structural data definition language statements (`CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `RENAME`).
+- **Ingestor Poller Service (`backend/src/services/ingestor.service.js`)**:
+  - Direct server-side polling of `mysql.general_log` (with `log_output=TABLE`).
+  - Watermark query pagination: ordered by `(event_time, thread_id) ASC`.
+  - JIT User Attribution: extracts ephemeral username (e.g. `jit_11_540d93`) and automatically joins against `db_sessions` and `users` to tie raw database queries to the requesting authenticated user identity and session ID.
+  - Internal query exclusion: filters out backend administrative queries (`itds_admin`, `information_schema`, watermark updates, ping queries) to avoid infinite feedback loops.
+  - Event listener bus: `onEvent()` publisher for downstream real-time consumers (threat detection, SSE).
+- **Background Ingestor Worker (`backend/src/workers/ingestor.worker.js`)**:
+  - Asynchronous background poller running on a 1.5-second interval loop, gracefully recovering from connection lapses.
+- **REST API Endpoints (`backend/src/routes/sqlEvent.routes.js`)**:
+  - `GET /sql-events` (and `/api/sql-events`): role-restricted to `admin`, `security_analyst`, and `dba`.
+  - Query parameters: `session_id`, `user_id`, `operation`, `status`, `limit`, `offset`.
+- **Frontend SQL Activity Log Console (`frontend/src/pages/SqlEventsPage.jsx`)**:
+  - Overview telemetry cards: Total Captured Events, JIT Attributed Queries, DDL / Schema Changes, Unbounded Reads.
+  - Real-time polling toggle (3s auto-refresh) and manual refresh.
+  - Filtering by SQL Operation, Status, and Session ID.
+  - Interactive table displaying timestamp, attributed persona, session badge, operation color chip, query preview, target tables, and security flags.
+  - Deep SQL Inspection Modal displaying raw SQL with 1-click clipboard copy, AST normalized template, extracted tables, and detailed semantic flags.
+
+---
+
+### How to Test and Verify
+
+#### 1. Automated Integration Tests
+```bash
+cd backend
+npm test -- tests/ingestor.test.js
+```
+
+Expected output:
+```
+PASS tests/ingestor.test.js
+  Phase 6 SQL Ingestion & AST Parsing Tests
+    AST Parsing & Normalization
+      √ correctly normalizes queries and extracts target tables (1 ms)
+      √ identifies unbounded read queries (no WHERE or LIMIT) (1 ms)
+      √ identifies cross-schema queries (0 ms)
+      √ parses DDL statements as DDL operation (1 ms)
+    Server-Side General Log Ingestion & User Attribution
+      √ captures and attributes SQL executed by an ephemeral JIT user to the authenticated user (204 ms)
+      √ filters SQL events by session_id via GET /sql-events (11 ms)
+      √ denies access to /sql-events for standard employees without audit roles (7 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+```
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Scaffold and infrastructure** (Completed)
@@ -565,7 +627,7 @@ Tests:       8 passed, 8 total
 - [x] **Phase 3: Resources and reusable access profiles** (Completed)
 - [x] **Phase 4: OPA/Rego policy engine integration** (Completed)
 - [x] **Phase 5: JIT sessions and MySQL user provisioning** (Completed)
-- [ ] **Phase 6: SQL activity ingestion**
+- [x] **Phase 6: SQL activity ingestion** (Completed)
 - [ ] **Phase 7: Policy evaluation of observed queries**
 - [ ] **Phase 8: Threat detection engine and risk scoring**
 - [ ] **Phase 9: Real-time pipeline and admin dashboard**

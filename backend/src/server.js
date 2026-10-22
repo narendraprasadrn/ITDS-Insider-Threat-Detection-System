@@ -4,6 +4,7 @@ import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { pool } from './db/pool.js';
 import { startExpiryWorker, stopExpiryWorker } from './workers/expiry.worker.js';
+import { startIngestorWorker, stopIngestorWorker } from './workers/ingestor.worker.js';
 
 const server = app.listen(env.PORT, () => {
   logger.info({
@@ -15,12 +16,14 @@ const server = app.listen(env.PORT, () => {
 
   // Start background workers
   startExpiryWorker();
+  startIngestorWorker(1500); // Poll every 1.5s
 });
 
 // Graceful shutdown handling
 function handleShutdown(signal) {
   logger.info({ signal }, 'Received shutdown signal, shutting down gracefully...');
   stopExpiryWorker();
+  stopIngestorWorker();
 
   server.close(async () => {
     try {

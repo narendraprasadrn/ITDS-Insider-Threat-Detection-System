@@ -12,6 +12,7 @@ import UserManagement from './pages/UserManagement.jsx';
 import ProfilesPage from './pages/ProfilesPage.jsx';
 import PoliciesPage from './pages/PoliciesPage.jsx';
 import SessionsPage from './pages/SessionsPage.jsx';
+import SqlEventsPage from './pages/SqlEventsPage.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
               <Route path="profiles" element={<ProfilesPage />} />
               <Route path="policies" element={<PoliciesPage />} />
               <Route path="sessions" element={<SessionsPage />} />
+              <Route path="sql-events" element={<SqlEventsPage />} />
               <Route
                 path="users"
                 element={
