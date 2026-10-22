@@ -3,6 +3,7 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { pool } from './db/pool.js';
+import { startExpiryWorker, stopExpiryWorker } from './workers/expiry.worker.js';
 
 const server = app.listen(env.PORT, () => {
   logger.info({
@@ -11,11 +12,16 @@ const server = app.listen(env.PORT, () => {
     db: `${env.DB.USER}@${env.DB.HOST}:${env.DB.PORT}/${env.DB.NAME}`,
     opa: env.OPA.URL
   }, `ITDS Backend API server listening on http://localhost:${env.PORT}`);
+
+  // Start background workers
+  startExpiryWorker();
 });
 
 // Graceful shutdown handling
 function handleShutdown(signal) {
   logger.info({ signal }, 'Received shutdown signal, shutting down gracefully...');
+  stopExpiryWorker();
+
   server.close(async () => {
     try {
       await pool.end();

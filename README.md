@@ -473,13 +473,98 @@ Tests:       8 passed, 8 total
 
 ---
 
+## Phase 5: JIT Sessions and MySQL User Provisioning
+
+### What Was Built
+- **Database Migrations (`backend/db/migrations/005_jit_sessions.sql`)**:
+  - `access_requests`: Captures requests, requested duration, business justification, status (`pending`, `approved`, `denied`, `expired`), and OPA decision reasoning.
+  - `approvals`: Audit history of manual supervisor/admin decisions.
+  - `db_sessions`: Tracks active sessions, start/end timestamps, ephemeral MySQL username (`jit_<requestId>_<rand>`), and JSON granted operations & resources.
+- **Dynamic MySQL Least-Privilege Provisioning Engine (`sessionService`)**:
+  - Automatically provisions dedicated MySQL user `jit_<requestId>_<rand>` with secure random password.
+  - Generates strictly scoped table-level `GRANT`s matching only the profile's allowed operations and resources.
+  - Issues connection credentials (`host`, `port`, `database`, `username`, `password`, `expiresAt`) returned ONCE to the employee.
+- **Background Expiry & Teardown Worker (`expiry.worker.js`)**:
+  - Scheduled via `node-cron` running every 30 seconds (`*/30 * * * * *`).
+  - Scans for expired sessions (`end_time <= NOW()`), terminates active client connections (`KILL <threadId>`), and drops the MySQL user (`DROP USER`).
+  - Provides instant manual revocation by administrator (`POST /api/sessions/:id/revoke`).
+- **Access Request Endpoints**:
+  - `POST /access-requests`: Evaluates requested profile against OPA (`access_request.rego`). Auto-approves and provisions user if allowed, routes to pending queue if required, or denies.
+  - `GET /access-requests/pending`: Approval queue for administrators.
+  - `POST /access-requests/:id/approve` & `POST /access-requests/:id/deny`: Manual supervisor review.
+  - `GET /sessions/my`: Employee active/past sessions with expiry timestamps.
+  - `GET /sessions/active` & `POST /sessions/:id/revoke`: Admin global session monitoring and force revocation.
+- **Frontend JIT Sessions UI (`SessionsPage.jsx`)**:
+  - Interactive "Request Access" modal with profile selection and duration slider.
+  - **One-Time Credentials Modal**: Copyable host, port, db, ephemeral username, and revealed/hidden password for DBeaver/Workbench.
+  - "My Sessions" tab with countdown timer.
+  - "Pending Approvals Queue" tab with Approve/Deny buttons and administrator review notes.
+  - "Active Global Sessions" tab with immediate Revoke button.
+
+---
+
+### How to Test and Verify
+
+#### 1. Automated Integration Tests
+```bash
+cd backend
+npm test -- tests/sessions.test.js
+```
+
+Expected output:
+```
+PASS tests/sessions.test.js
+  Phase 5 JIT Sessions & MySQL User Provisioning Tests
+    Auto-Approval JIT Flow (Sales Read-Only)
+      √ developer submits request for auto-approve profile -> receives JIT MySQL credentials (129 ms)
+      √ ephemeral JIT user can execute allowed SELECT on granted table (26 ms)
+      √ ephemeral JIT user is DENIED access to ungranted table (salaries) (8 ms)
+      √ ephemeral JIT user is DENIED ungranted operation (DELETE on customers) (7 ms)
+    Approval Queue Flow (HR Staff Payroll & Compensation)
+      √ hr_staff submits request for critical profile -> routed to pending queue by OPA (38 ms)
+      √ admin views pending requests queue (15 ms)
+      √ admin approves pending request -> temporary MySQL user is created (107 ms)
+    Session Revocation & Connection Teardown
+      √ admin force-revokes an active session -> drops user from MySQL (50 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+```
+
+#### 2. Manual CLI Connection with Temporary Credentials
+- **Querying Granted Table**:
+  ```bash
+  mysql -u jit_9_56041b -p"JitY6vJ*JIhu0QPhkqC9!" target_db -e "SELECT customer_code, company_name FROM customers LIMIT 2;"
+  ```
+  Returns `CUST2001 Lopez Logistics`, `CUST2002 Thomas Solutions`.
+
+- **Querying Ungranted Table (Blocked by MySQL Grant)**:
+  ```bash
+  mysql -u jit_9_56041b -p"JitY6vJ*JIhu0QPhkqC9!" target_db -e "SELECT * FROM salaries LIMIT 1;"
+  ```
+  Returns `ERROR 1142 (42000): SELECT command denied to user 'jit_9_56041b'@'localhost' for table 'salaries'`.
+
+- **Executing Ungranted Operation (Blocked by MySQL Grant)**:
+  ```bash
+  mysql -u jit_9_56041b -p"JitY6vJ*JIhu0QPhkqC9!" target_db -e "DELETE FROM customers WHERE customer_id = 1;"
+  ```
+  Returns `ERROR 1142 (42000): DELETE command denied to user 'jit_9_56041b'@'localhost' for table 'customers'`.
+
+- **After Expiry or Revoke**:
+  ```bash
+  mysql -u jit_9_56041b -p"JitY6vJ*JIhu0QPhkqC9!" target_db -e "SELECT 1;"
+  ```
+  Returns `ERROR 1045 (28000): Access denied for user 'jit_9_56041b'@'localhost'`.
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Scaffold and infrastructure** (Completed)
 - [x] **Phase 2: Authentication and RBAC** (Completed)
 - [x] **Phase 3: Resources and reusable access profiles** (Completed)
 - [x] **Phase 4: OPA/Rego policy engine integration** (Completed)
-- [ ] **Phase 5: JIT sessions and MySQL user provisioning**
+- [x] **Phase 5: JIT sessions and MySQL user provisioning** (Completed)
 - [ ] **Phase 6: SQL activity ingestion**
 - [ ] **Phase 7: Policy evaluation of observed queries**
 - [ ] **Phase 8: Threat detection engine and risk scoring**
