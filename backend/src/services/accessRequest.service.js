@@ -117,6 +117,7 @@ export const accessRequestService = {
       return {
         status: 'approved',
         requestId,
+        sessionId: sessionResult.sessionId,
         decision,
         credentials: sessionResult.credentials
       };

@@ -12,6 +12,15 @@
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "build:frontend": "npm --prefix frontend run build",
-    "verify:phase1": "node --input-type=module -e \"import('./scripts/verify_phase1.js')\""
+    "verify:phase1": "node --input-type=module -e \"import('./scripts/verify_phase1.js')\"",
+    "demo:reset": "node scripts/demo_reset.js",
+    "simulate:all": "node scripts/simulate/run_all.js",
+    "simulate:a": "node scripts/simulate/scenario_a_normal.js",
+    "simulate:b": "node scripts/simulate/scenario_b_exfiltration.js",
+    "simulate:c": "node scripts/simulate/scenario_c_privilege_probing.js",
+    "simulate:d": "node scripts/simulate/scenario_d_off_hours.js",
+    "simulate:e": "node scripts/simulate/scenario_e_credential_sharing.js",
+    "test": "npm --prefix backend test",
+    "test:e2e": "npm --prefix backend test -- tests/e2e.test.js"
   }
 }

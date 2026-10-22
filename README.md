@@ -848,6 +848,105 @@ Total live SSE events received: 24
 
 ---
 
+## Phase 10: Attack Simulation, Testing, and Demo Hardening
+
+### What Was Built
+- **Comprehensive Attack Simulation Suite (`/scripts/simulate/`)**:
+  - Modular scenario runners testing 5 distinct operational and threat models:
+    - `scenario_a_normal.js`: **Normal Analyst Day** &mdash; Compliant queries within authorized profile scope and working hours (0 violations, 0/100 risk score, no false alerts).
+    - `scenario_b_exfiltration.js`: **Data Exfiltration** &mdash; Mass unbounded `SELECT *` dumps without `LIMIT`/`WHERE` with query velocity burst (score: 80/100, CRITICAL, security alert generated).
+    - `scenario_c_privilege_probing.js`: **Privilege Probing & Reconnaissance** &mdash; Unauthorized `DELETE` DML, `DROP TABLE` DDL, and cross-schema enumeration on `information_schema` (score: 100/100, CRITICAL, multi-detector aggregation).
+    - `scenario_d_off_hours.js`: **Off-Hours Payroll Access** &mdash; High-sensitivity `salaries` access outside authorized schedule (score: 75/100, CRITICAL, security alert generated).
+    - `scenario_e_credential_sharing.js`: **Credential Sharing / Unattributed Use** &mdash; Direct unmanaged SQL queries bypassing JIT governance (flagged as `unattributed`, policy violations recorded).
+  - `run_all.js`: Evaluation suite runner that executes all scenarios, benchmarks detection latencies, outputs a formatted ASCII summary table, and exports `docs/evaluation_results.md`.
+- **Automated Demo Reset & Purge Engine (`scripts/demo_reset.js`)**:
+  - `npm run demo:reset`: Idempotent script that terminates active connection threads, drops all lingering ephemeral MySQL accounts (`jit_%`), truncates runtime tables (`alerts`, `session_risk_scores`, `policy_violations`, `sql_events`, `db_sessions`, `access_requests`, `audit_log`), advances ingestion watermark to current timestamp, and re-syncs baseline profile seeds.
+- **Full-Path End-to-End Integration Suite (`backend/tests/e2e.test.js`)**:
+  - Validates the complete architectural chain:
+    $$\text{request} \longrightarrow \text{OPA} \longrightarrow \text{approval} \longrightarrow \text{MySQL user} \longrightarrow \text{query} \longrightarrow \text{ingestion} \longrightarrow \text{violation} \longrightarrow \text{score} \longrightarrow \text{alert} \longrightarrow \text{revocation}$$
+- **Comprehensive Technical Documentation Pack**:
+  - `docs/architecture.md`: Updated with full system architecture flowchart and comprehensive Mermaid ER diagram for both schemas (`itds_app` and `target_db`).
+  - `docs/api_reference.md`: Complete REST API reference covering authentication, profiles, JIT requests, sessions, SQL telemetry, violations, risk scores, alerts, and SSE streaming.
+  - `docs/limitations.md`: Expanded engineering analysis on `general_log` I/O overhead, polling latency, synchronous pre-execution vs asynchronous post-hoc enforcement, connection pooling caveats, and production alternatives.
+  - `docs/demo_guide.md`: Step-by-step evaluator and presentation guide for demonstrating the system live.
+  - `docs/evaluation_results.md`: Formal academic evaluation report of simulation benchmarks.
+
+---
+
+### How to Test and Verify
+
+#### 1. Full-Path End-to-End Automated Test
+```bash
+npm run test:e2e
+```
+Expected output:
+```
+PASS tests/e2e.test.js
+  Phase 10 End-to-End Pipeline Integration Test
+    √ Step 1 -> 2: User requests profile requiring approval; OPA routes to pending queue (42 ms)
+    √ Step 3 -> 4: Admin reviews pending request and approves; Ephemeral MySQL user provisioned (81 ms)
+    √ Step 5: Connect as ephemeral JIT MySQL user and execute compliant, blocked, and unbounded queries (21 ms)
+    √ Step 6 -> 7: Ingest general_log, attribute to JIT session, and evaluate policy violations in OPA (168 ms)
+    √ Step 8 -> 9: Risk engine aggregates explainable score and raises security alert (score >= 70) (10 ms)
+    √ Step 10: Admin queries /alerts and updates status to investigating (28 ms)
+    √ Step 11: Admin revokes JIT session -> MySQL user is dropped and connection is terminated (35 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+```
+
+#### 2. Run All Backend Test Suites
+```bash
+npm test
+```
+Expected output:
+```
+Test Suites: 9 passed, 9 total
+Tests:       72 passed, 72 total
+Snapshots:   0 total
+```
+
+#### 3. Run Attack Simulations & Generate Evaluation Table
+```bash
+npm run simulate:all
+```
+Real CLI execution output:
+```
+========================================================================
+                    PHASE 10 EVALUATION REPORT TABLE
+========================================================================
+
+┌─────────┬─────┬─────────────────────────────────────────┬─────────┬────────────┬───────────┬────────────┬────────┬─────────────┬───────────┐
+│ (index) │ ID  │ Scenario                                │ Queries │ Violations │ Score     │ Level      │ Alert? │ Detect (ms) │ Result    │
+├─────────┼─────┼─────────────────────────────────────────┼─────────┼────────────┼───────────┼────────────┼────────┼─────────────┼───────────┤
+│ 0       │ 'A' │ 'Normal Analyst Day'                    │ 3       │ 0          │ '0/100'   │ 'LOW'      │ 'NO'   │ '4215ms'    │ 'SUCCESS' │
+│ 1       │ 'B' │ 'Data Exfiltration Attack'              │ 7       │ 8          │ '80/100'  │ 'CRITICAL' │ 'YES'  │ '4868ms'    │ 'SUCCESS' │
+│ 2       │ 'C' │ 'Privilege Probing & Reconnaissance'    │ 6       │ 11         │ '100/100' │ 'CRITICAL' │ 'YES'  │ '4773ms'    │ 'SUCCESS' │
+│ 3       │ 'D' │ 'Off-Hours Payroll Access'              │ 5       │ 2          │ '75/100'  │ 'CRITICAL' │ 'YES'  │ '4697ms'    │ 'SUCCESS' │
+│ 4       │ 'E' │ 'Credential Sharing / Unattributed Use' │ 4       │ 9          │ '60/100'  │ 'HIGH'     │ 'YES'  │ '4134ms'    │ 'SUCCESS' │
+└─────────┴─────┴─────────────────────────────────────────┴─────────┴────────────┴───────────┴────────────┴────────┴─────────────┴───────────┘
+
+Detailed Rule Breakdowns:
+  [Scenario A] Normal Analyst Day: None (Compliant)
+  [Scenario B] Data Exfiltration Attack: high_query_velocity, bulk_export, out_of_profile_table
+  [Scenario C] Privilege Probing & Reconnaissance: high_query_velocity, bulk_export, out_of_profile_table, rapid_failed_queries, cross_schema_read
+  [Scenario D] Off-Hours Payroll Access: high_query_velocity, bulk_export, off_hours_activity
+  [Scenario E] Credential Sharing / Unattributed Use: unattributed_account_use, unauthorized_ddl
+
+✓ Detailed Markdown evaluation report saved to: docs/evaluation_results.md
+========================================================================
+ 🎉 ALL 5 ATTACK SIMULATION SCENARIOS PASSED FULL EVALUATION!
+    Total Suite Execution Time: 22.79s
+========================================================================
+```
+
+#### 4. Clean Demo State Reset
+```bash
+npm run demo:reset
+```
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Scaffold and infrastructure** (Completed)
@@ -859,4 +958,4 @@ Total live SSE events received: 24
 - [x] **Phase 7: Policy evaluation of observed queries** (Completed)
 - [x] **Phase 8: Threat detection engine and risk scoring** (Completed)
 - [x] **Phase 9: Real-time pipeline and admin dashboard** (Completed)
-- [ ] **Phase 10: Attack simulation, testing, and demo hardening**
+- [x] **Phase 10: Attack simulation, testing, and demo hardening** (Completed)
