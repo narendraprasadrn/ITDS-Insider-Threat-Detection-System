@@ -36,22 +36,22 @@ export default function Sidebar({ open, onClose, variant = 'permanent' }) {
   const isAdmin = userRoles.includes('admin');
   const isSecurity = userRoles.includes('security_analyst') || isAdmin;
 
-  const menuItems = [
-    { text: 'Security Console', icon: <DashboardIcon />, path: '/', active: true, phase: 'Phase 9' },
+    const menuItems = [
+    { text: 'Security Console', icon: <DashboardIcon />, path: '/', active: true, phase: 'Phase 9', roles: ['admin', 'security_analyst'] },
     {
       text: 'User & RBAC',
       icon: <AdminPanelSettingsIcon />,
       path: '/users',
       active: true,
       phase: 'Phase 2',
-      adminOnly: true
+      roles: ['admin']
     },
     { text: 'Access Profiles', icon: <StorageIcon />, path: '/profiles', active: true, phase: 'Phase 3' },
     { text: 'OPA Policies', icon: <RuleIcon />, path: '/policies', active: true, phase: 'Phase 4' },
     { text: 'JIT Sessions', icon: <LockOpenIcon />, path: '/sessions', active: true, phase: 'Phase 5' },
-    { text: 'SQL Activity Log', icon: <VisibilityIcon />, path: '/sql-events', active: true, phase: 'Phase 6' },
-    { text: 'Policy Violations', icon: <PolicyIcon />, path: '/violations', active: true, phase: 'Phase 7' },
-    { text: 'Threat & Risk Feed', icon: <WarningIcon />, path: '/threats', active: true, phase: 'Phase 8' }
+    { text: 'SQL Activity Log', icon: <VisibilityIcon />, path: '/sql-events', active: true, phase: 'Phase 6', roles: ['admin', 'security_analyst', 'dba'] },
+    { text: 'Policy Violations', icon: <PolicyIcon />, path: '/violations', active: true, phase: 'Phase 7', roles: ['admin', 'security_analyst', 'dba'] },
+    { text: 'Threat & Risk Feed', icon: <WarningIcon />, path: '/threats', active: true, phase: 'Phase 8', roles: ['admin', 'security_analyst'] }
   ];
 
   return (
@@ -98,6 +98,7 @@ export default function Sidebar({ open, onClose, variant = 'permanent' }) {
       <Divider />
       <List sx={{ px: 1 }}>
         {menuItems.map((item) => {
+          if (item.roles && !item.roles.some(r => userRoles.includes(r))) return null;
           if (item.adminOnly && !isAdmin) return null;
           const isCurrent = location.pathname === item.path;
           return (

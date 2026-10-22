@@ -47,8 +47,10 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(username, password);
-      navigate(from, { replace: true });
+      const authUser = await login(username, password);
+      const isSec = (authUser?.roles || []).some(r => ['admin', 'security_analyst'].includes(r));
+      const targetPath = from === '/' ? (isSec ? '/' : '/sessions') : from;
+      navigate(targetPath, { replace: true });
     } catch (err) {
       setError(err.message || 'Authentication failed. Please verify credentials.');
     } finally {

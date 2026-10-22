@@ -1,5 +1,6 @@
 // frontend/src/pages/DashboardPage.jsx
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -50,6 +51,7 @@ import {
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { user, accessToken, hasRole } = useAuth();
   const isAdminOrSecurity = hasRole('admin') || hasRole('security_analyst');
 
@@ -244,6 +246,36 @@ export default function DashboardPage() {
       default: return '#78909c';
     }
   };
+
+
+  if (!isAdminOrSecurity) {
+    return (
+      <Box sx={{ py: 6, px: 3, maxWidth: 720, mx: 'auto', textAlign: 'center' }}>
+        <Card sx={{ p: 4, borderRadius: 3, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+          <ShieldIcon sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
+          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1.5 }}>
+            Insider Threat Detection System
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            Welcome, <strong>{user?.full_name || user?.username}</strong>! You are currently logged in with the <strong>[{user?.roles?.join(', ')}]</strong> role.
+          </Typography>
+          <Alert severity="info" sx={{ mb: 4, textAlign: 'left' }}>
+            The central Security Operations Console & real-time telemetry stream are restricted to Security Analysts and Administrators.
+            As an employee or developer, you can request and manage Just-In-Time (JIT) ephemeral database credentials under the <strong>JIT Sessions</strong> tab.
+          </Alert>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => navigate('/sessions')}
+            startIcon={<LockOpenIcon />}
+            sx={{ px: 4, py: 1.2, fontWeight: 600 }}
+          >
+            Go to JIT Access Sessions
+          </Button>
+        </Card>
+      </Box>
+    );
+  }
 
   return (
     <Box>

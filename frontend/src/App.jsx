@@ -40,9 +40,9 @@ export default function App() {
               <Route path="profiles" element={<ProfilesPage />} />
               <Route path="policies" element={<PoliciesPage />} />
               <Route path="sessions" element={<SessionsPage />} />
-              <Route path="sql-events" element={<SqlEventsPage />} />
-              <Route path="violations" element={<ViolationsPage />} />
-              <Route path="threats" element={<ThreatFeedPage />} />
+              <Route path="sql-events" element={<ProtectedRoute requiredRoles={['admin', 'security_analyst', 'dba']}><SqlEventsPage /></ProtectedRoute>} />
+              <Route path="violations" element={<ProtectedRoute requiredRoles={['admin', 'security_analyst', 'dba']}><ViolationsPage /></ProtectedRoute>} />
+              <Route path="threats" element={<ProtectedRoute requiredRoles={['admin', 'security_analyst']}><ThreatFeedPage /></ProtectedRoute>} />
               <Route
                 path="users"
                 element={
