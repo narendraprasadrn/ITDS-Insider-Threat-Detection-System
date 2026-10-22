@@ -306,11 +306,90 @@ Ran all test suites.
 
 ---
 
+## Phase 3: Resources and Reusable Access Profiles
+
+### What Was Built
+- **Database Migrations (`backend/db/migrations/004_resources_and_profiles.sql`)**:
+  - `resources`: Database tables protected by ITDS with sensitivity ratings (`low`, `medium`, `high`, `critical`).
+  - `access_profiles`: Reusable profiles defining permitted SQL operations (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `DDL`), max duration (minutes), max rows hint, risk level, and `requires_approval` boolean.
+  - `profile_resources`: Many-to-many profile to resource mapping.
+  - `role_profiles`: Many-to-many role to profile mapping governing which employee roles may request which profiles.
+  - Seeded 6 organizational tables in `target_db` (from low-sensitivity `departments` to critical-sensitivity `salaries`).
+  - Seeded 6 distinct reusable access profiles:
+    1. *Sales & Customer Read-Only* (Analyst, Developer, Admin | Auto-Approve | Low risk)
+    2. *Support Order Processing* (Developer, Admin | Auto-Approve | Medium risk)
+    3. *HR Staff Payroll & Compensation* (HR Staff, Admin | Requires Approval | Critical risk)
+    4. *DBA Schema & Maintenance* (DBA, Admin | Requires Approval | DDL | High risk)
+    5. *Financial Audit & Reporting* (Analyst, Security Analyst, Admin | Requires Approval | High risk)
+    6. *Security Incident Investigation* (Security Analyst, Admin | Requires Approval | High risk)
+- **Backend Services & Endpoints**:
+  - `profileService` and `resourceService` providing full CRUD operations.
+  - `GET /profiles/available` (`GET /api/profiles/available`): Evaluates authenticated user's assigned roles and returns only permitted profiles.
+  - Admin CRUD endpoints: `GET/POST /api/resources`, `GET/POST/PUT/DELETE /api/profiles`.
+- **Frontend Access Profiles View (`ProfilesPage.jsx`)**:
+  - **Employee View**: Interactive catalog of available profiles for the user's active role with operation badges, resource list, duration badges, and approval status.
+  - **Admin View**: Multi-tab management console allowing creation, editing, and resource catalog sensitivity reviews.
+  - Updated `Sidebar` with live navigation to `/profiles`.
+
+---
+
+### How to Test and Verify
+
+#### 1. Automated Jest Test Suite
+```bash
+cd backend
+npm test -- tests/profiles.test.js
+```
+
+Expected output:
+```
+PASS tests/profiles.test.js
+  Phase 3 Resources & Access Profiles Test Suite
+    GET /profiles/available (Role-based profile filtering)
+      √ developer sees only their permitted profiles (33 ms)
+      √ hr_staff sees only HR payroll profiles (22 ms)
+    Admin Access Profiles CRUD (/api/profiles)
+      √ non-admin is denied access to /api/profiles with 403 (17 ms)
+      √ admin can list all 6 access profiles (22 ms)
+      √ admin can create a new reusable access profile (41 ms)
+      √ admin can edit the created profile (35 ms)
+      √ non-admin is denied when attempting to create a profile (15 ms)
+      √ admin can delete the created profile (25 ms)
+    Resources CRUD (/api/resources)
+      √ admin can list target_db resources with sensitivity levels (18 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+```
+
+#### 2. Manual CLI Verification
+- **Developer Role Filtering**:
+  ```bash
+  # Developer token
+  DEV_TOKEN=$(curl -s -X POST http://localhost:5000/auth/login -H "Content-Type: application/json" -d '{"username":"developer","password":"Password123!"}' | jq -r .data.accessToken)
+  
+  curl -s http://localhost:5000/profiles/available -H "Authorization: Bearer $DEV_TOKEN"
+  ```
+  Returns only `Sales & Customer Read-Only` and `Support Order Processing`.
+
+- **Admin Profile Creation**:
+  ```bash
+  ADMIN_TOKEN=$(curl -s -X POST http://localhost:5000/auth/login -H "Content-Type: application/json" -d '{"username":"admin","password":"Password123!"}' | jq -r .data.accessToken)
+  
+  curl -s -X POST http://localhost:5000/api/profiles \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"Audit Temp","description":"Test profile","allowed_operations":["SELECT"],"resource_ids":[1,2],"role_ids":[1]}'
+  ```
+  Returns `201 Created` with hydrated profile object.
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Scaffold and infrastructure** (Completed)
 - [x] **Phase 2: Authentication and RBAC** (Completed)
-- [ ] **Phase 3: Resources and reusable access profiles**
+- [x] **Phase 3: Resources and reusable access profiles** (Completed)
 - [ ] **Phase 4: OPA/Rego policy engine integration**
 - [ ] **Phase 5: JIT sessions and MySQL user provisioning**
 - [ ] **Phase 6: SQL activity ingestion**

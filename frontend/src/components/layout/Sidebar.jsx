@@ -45,7 +45,7 @@ export default function Sidebar({ open, onClose, variant = 'permanent' }) {
       phase: 'Phase 2',
       adminOnly: true
     },
-    { text: 'Access Profiles', icon: <StorageIcon />, path: '/profiles', active: false, phase: 'Phase 3' },
+    { text: 'Access Profiles', icon: <StorageIcon />, path: '/profiles', active: true, phase: 'Phase 3' },
     { text: 'OPA Policies', icon: <RuleIcon />, path: '/policies', active: false, phase: 'Phase 4' },
     { text: 'JIT Sessions', icon: <LockOpenIcon />, path: '/sessions', active: false, phase: 'Phase 5' },
     { text: 'SQL Activity Log', icon: <VisibilityIcon />, path: '/sql-events', active: false, phase: 'Phase 6' },

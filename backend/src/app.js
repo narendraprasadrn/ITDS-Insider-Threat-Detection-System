@@ -6,6 +6,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import apiRoutes from './routes/index.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import profileRoutes from './routes/profile.routes.js';
 
 const app = express();
 
@@ -18,8 +19,9 @@ app.use(requestLogger);
 // Direct root endpoints as specified in phase requirements
 app.use('/health', healthRoutes);
 app.use('/auth', authRoutes);
+app.use('/profiles', profileRoutes);
 
-// Full API routes prefix (/api/health, /api/auth, /api/users, etc.)
+// Full API routes prefix (/api/health, /api/auth, /api/users, /api/resources, /api/profiles, etc.)
 app.use('/api', apiRoutes);
 
 // 404 handler
