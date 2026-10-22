@@ -385,12 +385,100 @@ Tests:       9 passed, 9 total
 
 ---
 
+## Phase 4: OPA / Rego Policy Engine
+
+### What Was Built
+- **Rego Policies (`/policies`)**:
+  - `policies/access_request.rego`:
+    - Unified access request decision: `allow`, `require_approval`, or `deny`.
+    - Evaluates: user, roles, profile, resources, operations, requested duration, time of day, and sensitivity.
+    - Security rules:
+      - Critical/High sensitivity resources always require supervisor approval.
+      - DDL operations strictly restricted to DBA or Admin roles (denied for developers/analysts).
+      - Denies high/critical sensitivity requests outside business hours (08:00–18:00) unless requested by Admin.
+      - Caps maximum duration by sensitivity (critical: max 60m, high: max 120m, medium: max 240m, low: max 480m).
+      - Denies DELETE operations on critical payroll resources unless Admin.
+  - `policies/sql_query.rego`:
+    - Compliance evaluation of observed database queries against session grants.
+    - Violations flagged:
+      - `OPERATION_NOT_GRANTED`: Query operation not approved in session grants.
+      - `TABLE_OUT_OF_SCOPE`: Query targets table outside session grant scope.
+      - `SESSION_EXPIRED`: Query executed after session expiry.
+      - `UNAUTHORIZED_DDL`: Schema alterations attempted without explicit DDL grant.
+      - `UNBOUNDED_BULK_READ`: Full table dump `SELECT *` without LIMIT clause.
+- **Rego Unit Tests (`policies/*_test.rego`)**:
+  - 13 comprehensive unit tests executed via `opa test policies -v` with 100% pass rate.
+- **Backend Integration**:
+  - `policyService`: REST client calling OPA server (`/v1/data/itds/access/decision` and `/v1/data/itds/query/result`) with 2500ms timeout and fail-closed default.
+  - Dev evaluation endpoints: `POST /api/policy/evaluate` and `GET /api/policy/status`.
+- **Frontend Policy Console (`PoliciesPage.jsx`)**:
+  - Interactive evaluation sandbox allowing real-time testing of Rego policies with pre-built scenario presets (Allow, Require Approval, Denied DDL, Denied Off-Hours).
+
+---
+
+### How to Test and Verify
+
+#### 1. OPA Unit Test Suite
+```bash
+./opa.exe test policies -v
+```
+
+Expected output:
+```
+policies\access_request_test.rego:
+data.itds.access_test.test_allow_sales_read: PASS (1.4455ms)
+data.itds.access_test.test_require_approval_critical_salaries: PASS (1.0955ms)
+data.itds.access_test.test_require_approval_ddl_dba: PASS (0s)
+data.itds.access_test.test_deny_ddl_non_dba: PASS (1.5996ms)
+data.itds.access_test.test_deny_off_hours_high_sensitivity: PASS (612.8µs)
+data.itds.access_test.test_admin_override_off_hours: PASS (1.1256ms)
+data.itds.access_test.test_deny_duration_cap_exceeded: PASS (1.3708ms)
+
+policies\sql_query_test.rego:
+data.itds.query_test.test_allow_valid_query: PASS (0s)
+data.itds.query_test.test_violation_ungranted_operation: PASS (1.5564ms)
+data.itds.query_test.test_violation_table_out_of_scope: PASS (0s)
+data.itds.query_test.test_violation_unbounded_select_star: PASS (787.8µs)
+data.itds.query_test.test_violation_session_expired: PASS (0s)
+data.itds.query_test.test_violation_unauthorized_ddl: PASS (2.1244ms)
+--------------------------------------------------------------------------------
+PASS: 13/13
+```
+
+#### 2. Backend Policy Integration Tests
+```bash
+cd backend
+npm test -- tests/policy.test.js
+```
+
+Expected output:
+```
+PASS tests/policy.test.js
+  Phase 4 OPA Policy Engine Integration Tests
+    policyService.evaluateAccessRequest
+      √ should return action: allow for standard read request within business hours (29 ms)
+      √ should return action: require_approval for critical resources (salaries) (9 ms)
+      √ should return action: deny for DDL requested by non-DBA (7 ms)
+      √ should return action: deny for high-sensitivity off-hours request by non-admin (7 ms)
+    policyService.evaluateSqlQuery
+      √ should allow query matching session grants (13 ms)
+      √ should flag OPERATION_NOT_GRANTED when operation is ungranted (7 ms)
+      √ should flag TABLE_OUT_OF_SCOPE when query accesses unauthorized table (6 ms)
+    POST /api/policy/evaluate (Dev endpoint)
+      √ should return 200 and evaluation result for access_request (26 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+```
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Scaffold and infrastructure** (Completed)
 - [x] **Phase 2: Authentication and RBAC** (Completed)
 - [x] **Phase 3: Resources and reusable access profiles** (Completed)
-- [ ] **Phase 4: OPA/Rego policy engine integration**
+- [x] **Phase 4: OPA/Rego policy engine integration** (Completed)
 - [ ] **Phase 5: JIT sessions and MySQL user provisioning**
 - [ ] **Phase 6: SQL activity ingestion**
 - [ ] **Phase 7: Policy evaluation of observed queries**

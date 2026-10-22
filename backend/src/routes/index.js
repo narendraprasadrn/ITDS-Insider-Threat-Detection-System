@@ -5,6 +5,7 @@ import authRoutes from './auth.routes.js';
 import userRoutes from './user.routes.js';
 import resourceRoutes from './resource.routes.js';
 import profileRoutes from './profile.routes.js';
+import policyRoutes from './policy.routes.js';
 
 const router = Router();
 
@@ -13,5 +14,6 @@ router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/resources', resourceRoutes);
 router.use('/profiles', profileRoutes);
+router.use('/policy', policyRoutes);
 
 export default router;

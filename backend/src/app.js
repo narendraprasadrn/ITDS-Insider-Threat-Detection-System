@@ -7,6 +7,7 @@ import apiRoutes from './routes/index.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import profileRoutes from './routes/profile.routes.js';
+import policyRoutes from './routes/policy.routes.js';
 
 const app = express();
 
@@ -20,8 +21,9 @@ app.use(requestLogger);
 app.use('/health', healthRoutes);
 app.use('/auth', authRoutes);
 app.use('/profiles', profileRoutes);
+app.use('/policy', policyRoutes);
 
-// Full API routes prefix (/api/health, /api/auth, /api/users, /api/resources, /api/profiles, etc.)
+// Full API routes prefix (/api/health, /api/auth, /api/users, /api/resources, /api/profiles, /api/policy, etc.)
 app.use('/api', apiRoutes);
 
 // 404 handler
