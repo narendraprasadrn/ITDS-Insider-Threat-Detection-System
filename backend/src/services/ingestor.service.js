@@ -1,6 +1,7 @@
 // backend/src/services/ingestor.service.js
 import { pool } from '../db/pool.js';
 import { sqlParserService } from './sqlParser.service.js';
+import { violationService } from './violation.service.js';
 import { logger } from '../config/logger.js';
 
 class IngestorService {
@@ -103,16 +104,19 @@ class IngestorService {
         // 3. Attribution: Map jit_* users to db_sessions
         let sessionId = null;
         let userId = null;
+        let sessionRow = null;
         let attributionStatus = 'unattributed';
 
         if (username.startsWith('jit_')) {
           const [sessRows] = await pool.execute(
-            `SELECT id, user_id FROM db_sessions WHERE mysql_username = ? LIMIT 1`,
+            `SELECT id, user_id, status, end_time, mysql_username, granted_operations, granted_resources
+             FROM db_sessions WHERE mysql_username = ? LIMIT 1`,
             [username]
           );
           if (sessRows.length > 0) {
-            sessionId = sessRows[0].id;
-            userId = sessRows[0].user_id;
+            sessionRow = sessRows[0];
+            sessionId = sessionRow.id;
+            userId = sessionRow.user_id;
             attributionStatus = 'attributed';
           }
         }
@@ -159,6 +163,13 @@ class IngestorService {
           flags: parsed.flags,
           status: finalStatus
         };
+
+        // 6. Real-time Policy Evaluation: Detect violations and persist to policy_violations
+        try {
+          await violationService.evaluateEvent(eventPayload, sessionRow);
+        } catch (evalErr) {
+          logger.error({ err: evalErr, eventId }, 'Policy evaluation failed for ingested event');
+        }
 
         // Notify listeners
         this.emitEvent(eventPayload);

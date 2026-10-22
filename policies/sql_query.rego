@@ -60,6 +60,15 @@ violations contains violation if {
     }
 }
 
+violations contains violation if {
+    input.query.is_cross_schema == true
+    violation := {
+        "rule": "CROSS_SCHEMA_ACCESS",
+        "severity": "high",
+        "reason": "Query accesses resources across multiple distinct database schemas"
+    }
+}
+
 table_in_granted_resources(table) if {
     some granted in input.session.granted_resources
     endswith(granted, concat(".", ["", table]))

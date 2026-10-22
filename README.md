@@ -620,6 +620,69 @@ Tests:       7 passed, 7 total
 
 ---
 
+## Phase 7: Policy Evaluation of Observed Queries
+
+### What Was Built
+- **Policy Violations Schema (`backend/db/migrations/007_policy_violations.sql`)**:
+  - `policy_violations` table: `id`, `event_id` (FK to `sql_events`), `session_id` (FK to `db_sessions`), `user_id` (FK to `users`), `rule`, `severity` (`low`, `medium`, `high`, `critical`), `reason`, `enforcement_type` (`blocked_by_db`, `detected_post_hoc`), and `created_at`.
+- **Enforcement Classification Engine (`backend/src/services/violation.service.js`)**:
+  - `blocked_by_db`: Pre-execution preventative enforcement via native MySQL 8 least-privilege `GRANT`s (`OPERATION_NOT_GRANTED`, `TABLE_OUT_OF_SCOPE`, `UNAUTHORIZED_DDL`). The query fails at the MySQL database engine level (`1142: command denied`).
+  - `detected_post_hoc`: Post-execution semantic and contextual violation detection via OPA Rego rules applied to `general_log` telemetry (`UNBOUNDED_BULK_READ`, `CROSS_SCHEMA_ACCESS`, session boundary breaches). The query succeeded at the MySQL level, but is flagged as non-compliant within ~1.5s by ITDS.
+- **Rego Rule Additions (`policies/sql_query.rego` & `policies/sql_query_test.rego`)**:
+  - Added `CROSS_SCHEMA_ACCESS` rule identifying multi-database traversal.
+  - 14/14 OPA unit tests passing (`opa test policies -v`).
+- **Telemetry Ingestion Hook (`backend/src/services/ingestor.service.js`)**:
+  - Automatically evaluates every newly ingested `sql_events` record against OPA Rego policies in real time.
+  - Automatically correlates attributed JIT sessions (`db_sessions`) with observed query AST flags (`sqlParser.service.js`).
+  - Persists violations to `policy_violations` and emits real-time events to the violation bus.
+- **REST API Endpoints (`backend/src/routes/violation.routes.js`)**:
+  - `GET /violations` (and `/api/violations`): Filter by `session_id`, `user_id`, `rule`, `severity`, `enforcement_type`, `limit`, `offset`.
+  - Restricted to audit roles: `admin`, `security_analyst`, `dba`.
+- **Architectural Documentation (`docs/limitations.md`)**:
+  - Comprehensive documentation explaining the physical differences between pre-execution database grants and post-hoc AST analysis, audit latency trade-offs, and SQL parser boundaries.
+- **Frontend Policy Violations Stream (`frontend/src/pages/ViolationsPage.jsx`)**:
+  - Summary metric cards: Total Violations, Blocked by MySQL GRANTs (Pre-Execution), Detected Post-Hoc (Audit Telemetry), Critical/High Violations.
+  - Filterable by Severity, Enforcement Type (`blocked_by_db` vs `detected_post_hoc`), Policy Rule, and Session ID.
+  - Interactive table with severity chips, shield/warning enforcement badges, user/session attribution, reason explanations, and evidence query preview.
+  - Detailed violation inspection modal with 1-click query clipboard copy.
+
+---
+
+### How to Test and Verify
+
+#### 1. Automated Integration Tests
+```bash
+cd backend
+npm test -- tests/violations.test.js
+```
+
+Expected output:
+```
+PASS tests/violations.test.js
+  Phase 7 Policy Evaluation of Observed Queries Tests
+    √ allows compliant query without generating violations (85 ms)
+    √ records blocked_by_db violation when querying out-of-scope table (48 ms)
+    √ records blocked_by_db violation when attempting ungranted DELETE operation (50 ms)
+    √ records detected_post_hoc violation when executing unbounded bulk SELECT * (49 ms)
+    √ filters violations by enforcement_type via GET /violations (33 ms)
+    √ denies access to /violations for unauthorized employee roles (13 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+```
+
+#### 2. Rego Policy Suite
+```bash
+.\opa.exe test policies -v
+```
+
+Expected output:
+```
+PASS: 14/14
+```
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Scaffold and infrastructure** (Completed)
@@ -628,7 +691,7 @@ Tests:       7 passed, 7 total
 - [x] **Phase 4: OPA/Rego policy engine integration** (Completed)
 - [x] **Phase 5: JIT sessions and MySQL user provisioning** (Completed)
 - [x] **Phase 6: SQL activity ingestion** (Completed)
-- [ ] **Phase 7: Policy evaluation of observed queries**
+- [x] **Phase 7: Policy evaluation of observed queries** (Completed)
 - [ ] **Phase 8: Threat detection engine and risk scoring**
 - [ ] **Phase 9: Real-time pipeline and admin dashboard**
 - [ ] **Phase 10: Attack simulation, testing, and demo hardening**

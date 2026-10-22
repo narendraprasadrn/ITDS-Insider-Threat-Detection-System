@@ -135,3 +135,26 @@ test_violation_unauthorized_ddl if {
     res.allow == false
     "UNAUTHORIZED_DDL" in res.violations
 }
+
+# Test 7: Flag violation for cross-schema access
+test_violation_cross_schema_access if {
+    input_doc := {
+        "session": {
+            "granted_operations": ["SELECT"],
+            "granted_resources": ["target_db.customers"],
+            "is_expired": false
+        },
+        "query": {
+            "operation": "SELECT",
+            "tables": ["target_db.customers", "mysql.user"],
+            "has_where": false,
+            "select_star": false,
+            "has_limit": true,
+            "is_ddl": false,
+            "is_cross_schema": true
+        }
+    }
+    res := query.result with input as input_doc
+    res.allow == false
+    "CROSS_SCHEMA_ACCESS" in res.violations
+}

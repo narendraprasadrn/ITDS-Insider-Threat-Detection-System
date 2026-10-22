@@ -9,6 +9,7 @@ import policyRoutes from './policy.routes.js';
 import accessRequestRoutes from './accessRequest.routes.js';
 import sessionRoutes from './session.routes.js';
 import sqlEventRoutes from './sqlEvent.routes.js';
+import violationRoutes from './violation.routes.js';
 
 const router = Router();
 
@@ -21,5 +22,6 @@ router.use('/policy', policyRoutes);
 router.use('/access-requests', accessRequestRoutes);
 router.use('/sessions', sessionRoutes);
 router.use('/sql-events', sqlEventRoutes);
+router.use('/violations', violationRoutes);
 
 export default router;

@@ -11,6 +11,7 @@ import policyRoutes from './routes/policy.routes.js';
 import accessRequestRoutes from './routes/accessRequest.routes.js';
 import sessionRoutes from './routes/session.routes.js';
 import sqlEventRoutes from './routes/sqlEvent.routes.js';
+import violationRoutes from './routes/violation.routes.js';
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use('/policy', policyRoutes);
 app.use('/access-requests', accessRequestRoutes);
 app.use('/sessions', sessionRoutes);
 app.use('/sql-events', sqlEventRoutes);
+app.use('/violations', violationRoutes);
 
 // Full API routes prefix
 app.use('/api', apiRoutes);

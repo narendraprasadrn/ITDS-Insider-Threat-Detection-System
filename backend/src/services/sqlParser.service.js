@@ -23,7 +23,9 @@ export const sqlParserService = {
           has_union: false,
           is_ddl: false,
           has_comments: false,
-          multi_statement: false
+          multi_statement: false,
+          is_cross_schema: false,
+          is_unbounded_read: false
         },
         normalized_sql: '',
         parse_error: false
@@ -91,6 +93,17 @@ export const sqlParserService = {
       // Check UNION
       const hasUnion = Boolean(primaryAst._next) || /\bUNION\b/i.test(normalized);
 
+      // Check cross-schema access
+      const schemas = uniqueTables
+        .map(t => t.includes('.') ? t.split('.')[0] : null)
+        .filter(Boolean);
+      const uniqueSchemas = [...new Set(schemas)];
+      const isCrossSchema = uniqueSchemas.length > 1 || (uniqueSchemas.length === 1 && !['target_db', ''].includes(uniqueSchemas[0]));
+
+      // Check unbounded bulk read
+      const isUnboundedRead = (opType === 'SELECT' && selectStar && !hasLimit) ||
+                              (opType === 'SELECT' && !hasWhere && !hasLimit);
+
       return {
         operation: opType || 'UNKNOWN',
         tables: uniqueTables,
@@ -102,7 +115,9 @@ export const sqlParserService = {
           has_union: hasUnion,
           is_ddl: isDdl,
           has_comments: hasComments,
-          multi_statement: multiStatement
+          multi_statement: multiStatement,
+          is_cross_schema: isCrossSchema,
+          is_unbounded_read: isUnboundedRead
         },
         normalized_sql: normalized,
         parse_error: false
@@ -153,9 +168,18 @@ export const sqlParserService = {
     const tableMatch = normalized.match(/\bTABLE\s+([`\w.]+)/i);
     if (tableMatch) tables.push(tableMatch[1].replace(/[`]/g, ''));
 
+    const uniqueTables = [...new Set(tables)];
+    const schemas = uniqueTables
+      .map(t => t.includes('.') ? t.split('.')[0] : null)
+      .filter(Boolean);
+    const uniqueSchemas = [...new Set(schemas)];
+    const isCrossSchema = uniqueSchemas.length > 1 || (uniqueSchemas.length === 1 && !['target_db', ''].includes(uniqueSchemas[0]));
+    const isUnboundedRead = (operation === 'SELECT' && selectStar && !hasLimit) ||
+                            (operation === 'SELECT' && !hasWhere && !hasLimit);
+
     return {
       operation,
-      tables: [...new Set(tables)],
+      tables: uniqueTables,
       flags: {
         has_where: hasWhere,
         select_star: selectStar,
@@ -164,7 +188,9 @@ export const sqlParserService = {
         has_union: hasUnion,
         is_ddl: isDdl,
         has_comments: hasComments,
-        multi_statement: multiStatement
+        multi_statement: multiStatement,
+        is_cross_schema: isCrossSchema,
+        is_unbounded_read: isUnboundedRead
       },
       normalized_sql: normalized,
       parse_error: true

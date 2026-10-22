@@ -21,6 +21,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import WarningIcon from '@mui/icons-material/Warning';
 import HealthAndSafetyIcon from '@mui/icons-material/HealthAndSafety';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import PolicyIcon from '@mui/icons-material/Policy';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 
@@ -49,6 +50,7 @@ export default function Sidebar({ open, onClose, variant = 'permanent' }) {
     { text: 'OPA Policies', icon: <RuleIcon />, path: '/policies', active: true, phase: 'Phase 4' },
     { text: 'JIT Sessions', icon: <LockOpenIcon />, path: '/sessions', active: true, phase: 'Phase 5' },
     { text: 'SQL Activity Log', icon: <VisibilityIcon />, path: '/sql-events', active: true, phase: 'Phase 6' },
+    { text: 'Policy Violations', icon: <PolicyIcon />, path: '/violations', active: true, phase: 'Phase 7' },
     { text: 'Threat & Risk Feed', icon: <WarningIcon />, path: '/threats', active: false, phase: 'Phase 8' }
   ];
 
