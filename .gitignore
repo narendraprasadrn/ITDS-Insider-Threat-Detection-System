@@ -30,3 +30,5 @@ Thumbs.db
 
 # MySQL data (Docker local volume mount)
 mysql_data/
+
+*.exe

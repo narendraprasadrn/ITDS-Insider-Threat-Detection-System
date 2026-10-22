@@ -185,10 +185,131 @@ Expected output:
 
 ---
 
+## Phase 2: Authentication and RBAC
+
+### What Was Built
+- **Database Schema & Seed Data (`itds_app`)** ([`scripts/mysql-init/03_init_auth_rbac.sql`](file:///D:/Insider-vf/scripts/mysql-init/03_init_auth_rbac.sql)):
+  - Core security tables: `users`, `roles`, `permissions`, `role_permissions`, `user_roles`, `refresh_tokens`, and `audit_log`.
+  - Six organizational roles: `admin`, `security_analyst`, `dba`, `developer`, `analyst`, `hr_staff`.
+  - Granular permissions: `users:manage`, `audit:read`, `profiles:manage`, `sessions:request`, `sessions:approve`, `sessions:revoke`, `threats:view`, `threats:manage`.
+  - Seeded 1 active user per role with bcrypt-hashed passwords (`Password123!`):
+    - `admin` (`admin@itds.internal`)
+    - `security_analyst` (`sec_analyst@itds.internal`)
+    - `dba` (`dba@itds.internal`)
+    - `developer` (`dev@itds.internal`)
+    - `analyst` (`analyst@itds.internal`)
+    - `hr_staff` (`hr_staff@itds.internal`)
+- **Backend Auth & RBAC Services & Endpoints**:
+  - `POST /auth/login` (`POST /api/auth/login`): Validates password with `bcrypt.compare`, issues JWT access token + secure refresh token, and logs to `audit_log`.
+  - `POST /auth/refresh`: Rotates refresh tokens and issues fresh access tokens.
+  - `POST /auth/logout`: Revokes refresh tokens and logs logout event to `audit_log`.
+  - `GET /auth/me`: Returns current user's profile, roles, and permissions.
+  - `GET /auth/audit`: Paginated and filterable security audit log viewer (`admin` & `security_analyst` only).
+  - User Management CRUD (`GET /api/users`, `POST /api/users`, `GET /api/users/:id`, `PUT /api/users/:id`, `DELETE /api/users/:id`): Restricted to `admin` role via `requireRole('admin')`.
+  - Middleware: `authenticate()`, `requireRole(...roles)`, `requirePermission(...permissions)`.
+  - Audit logging service writing all authentication successes, logouts, and login failures with IP address, user-agent, and failure reason.
+- **Frontend Authentication & Protected Routes**:
+  - `AuthContext`: Provides user session state, JWT storage, `login()`, `logout()`, `hasRole()`, `hasPermission()`.
+  - `ProtectedRoute`: Route guard restricting unauthorized access, returning a dedicated 403 Forbidden alert with required roles when unauthorized.
+  - `LoginPage`: Cybersecurity authentication console with one-click demo persona quick-select buttons for all 6 seeded roles.
+  - Role-aware `Navbar`: Displays active user initials avatar, role chip, and dropdown menu with User Management and Logout actions.
+  - Role-aware `Sidebar`: Dynamically highlights and filters menu options according to role privileges (e.g. User Management visible only to `admin`).
+  - `UserManagement` Page: Admin-only interactive table with user creation dialog and account deactivation controls.
+
+---
+
+### How to Run
+
+1. **Ensure MySQL and Backend are running**:
+   ```bash
+   # From backend directory
+   npm run dev
+   ```
+
+2. **Run Frontend**:
+   ```bash
+   # From frontend directory
+   npm run dev
+   ```
+
+3. **Navigate to [http://localhost:5173/login](http://localhost:5173/login)**:
+   - Click any persona badge (e.g. `Admin`, `Sec Analyst`, `Developer`) to auto-fill credentials.
+   - Click **Sign In** to authenticate.
+
+---
+
+### How to Test and Verify
+
+#### 1. Automated Jest & Supertest Suite
+Run the Phase 2 test suite:
+```bash
+cd backend
+npm test
+```
+
+Expected output:
+```
+PASS tests/auth.test.js
+  Phase 2 Auth & RBAC Test Suite
+    POST /auth/login
+      √ should successfully log in with valid credentials and return JWT tokens (274 ms)
+      √ should fail with 401 when given an incorrect password (132 ms)
+      √ should fail with 401 when given a non-existent username (20 ms)
+    GET /auth/me
+      √ should return user profile and permissions when authenticated (31 ms)
+      √ should return 401 UNAUTHORIZED when no token is provided (13 ms)
+    RBAC Protected Routes (User Management)
+      √ should forbid non-admin user (developer) with 403 FORBIDDEN_ROLE (14 ms)
+      √ should allow admin user to list all users (24 ms)
+    Audit Logging
+      √ should record login and failure events in audit_log table (5 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        1.628 s
+Ran all test suites.
+```
+
+#### 2. Manual Verification Commands
+
+- **Successful Login**:
+  ```bash
+  curl -s -X POST http://localhost:5000/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"username":"admin","password":"Password123!"}'
+  ```
+  Returns `{"success": true, "data": {"user": {"username": "admin", "roles": ["admin"]}, "accessToken": "...", "refreshToken": "..."}}`
+
+- **Failed Login (Wrong Password)**:
+  ```bash
+  curl -s -X POST http://localhost:5000/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"username":"admin","password":"WrongPassword"}'
+  ```
+  Returns `{"success": false, "error": {"code": "INVALID_CREDENTIALS", "message": "Invalid username or password"}}`
+
+- **RBAC Role Restriction (Developer denied admin route)**:
+  ```bash
+  # Login as developer
+  DEV_TOKEN=$(curl -s -X POST http://localhost:5000/auth/login -H "Content-Type: application/json" -d '{"username":"developer","password":"Password123!"}' | jq -r .data.accessToken)
+  
+  # Access admin-only user management
+  curl -s http://localhost:5000/api/users -H "Authorization: Bearer $DEV_TOKEN"
+  ```
+  Returns `403 Forbidden`: `{"success": false, "error": {"code": "FORBIDDEN_ROLE", "message": "Access denied. Requires one of roles: [admin]"}}`
+
+- **Audit Log Verification in MySQL**:
+  ```bash
+  mysql -u itds_admin -pItdsAdminPass123! itds_app -e "SELECT event_type, username, status, details FROM audit_log ORDER BY id DESC LIMIT 5;"
+  ```
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Scaffold and infrastructure** (Completed)
-- [ ] **Phase 2: Authentication and RBAC**
+- [x] **Phase 2: Authentication and RBAC** (Completed)
 - [ ] **Phase 3: Resources and reusable access profiles**
 - [ ] **Phase 4: OPA/Rego policy engine integration**
 - [ ] **Phase 5: JIT sessions and MySQL user provisioning**
