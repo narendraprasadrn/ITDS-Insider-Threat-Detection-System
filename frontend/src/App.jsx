@@ -6,7 +6,7 @@ import { theme } from './theme/theme.js';
 import { AuthProvider } from './context/AuthContext.jsx';
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx';
 import Layout from './components/layout/Layout.jsx';
-import DashboardPlaceholder from './pages/DashboardPlaceholder.jsx';
+import DashboardPage from './pages/DashboardPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import UserManagement from './pages/UserManagement.jsx';
 import ProfilesPage from './pages/ProfilesPage.jsx';
@@ -36,7 +36,7 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<DashboardPlaceholder />} />
+              <Route index element={<DashboardPage />} />
               <Route path="profiles" element={<ProfilesPage />} />
               <Route path="policies" element={<PoliciesPage />} />
               <Route path="sessions" element={<SessionsPage />} />

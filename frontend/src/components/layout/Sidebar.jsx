@@ -37,7 +37,7 @@ export default function Sidebar({ open, onClose, variant = 'permanent' }) {
   const isSecurity = userRoles.includes('security_analyst') || isAdmin;
 
   const menuItems = [
-    { text: 'System Status', icon: <HealthAndSafetyIcon />, path: '/', active: true, phase: 'Phase 1' },
+    { text: 'Security Console', icon: <DashboardIcon />, path: '/', active: true, phase: 'Phase 9' },
     {
       text: 'User & RBAC',
       icon: <AdminPanelSettingsIcon />,

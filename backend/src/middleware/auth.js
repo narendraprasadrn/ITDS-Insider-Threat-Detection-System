@@ -7,12 +7,18 @@ import { AppError } from './errorHandler.js';
  * JWT Authentication Middleware
  */
 export function authenticate(req, res, next) {
+  let token = null;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return next(new AppError('Authentication token missing or invalid', 401, 'UNAUTHORIZED'));
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return next(new AppError('Authentication token missing or invalid', 401, 'UNAUTHORIZED'));
+  }
 
   try {
     const decoded = jwt.verify(token, env.JWT.SECRET);

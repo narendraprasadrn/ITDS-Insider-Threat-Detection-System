@@ -753,6 +753,101 @@ Tests:       16 passed, 16 total
 
 ---
 
+## Phase 9: Real-Time Pipeline and Admin Dashboard
+
+### What Was Built
+- **Server-Sent Events (SSE) Engine (`backend/src/services/sse.service.js`)**:
+  - `GET /stream`: Real-time streaming pipeline broadcasting 4 structured event streams to security consoles:
+    - `query_observed`: Ingested SQL telemetry with user and session attribution.
+    - `violation_detected`: Policy violations identified by OPA Rego rules (`blocked_by_db` vs `detected_post_hoc`).
+    - `risk_updated`: Dynamic session risk recalculations.
+    - `alert_created`: High-risk incident alerts.
+  - Heartbeat keep-alive timer (`: heartbeat\n\n` every 15s) with non-blocking `.unref()` process lifecycle handling.
+  - Dual authentication: Supports both standard `Authorization: Bearer <token>` and native browser `?token=<token>` query parameters for EventSource clients.
+  - Restricted to audit roles: `admin`, `security_analyst`, `dba`.
+- **Frontend Security Operations Console (`frontend/src/pages/DashboardPage.jsx`)**:
+  - Real-time reactive updates: Direct EventSource connection updating the entire dashboard without page refreshes.
+  - Top Metrics Bar: Active JIT sessions, queries/minute rate gauge, open threat alerts badge, and highest-risk session callout.
+  - Live Server-Side SQL Feed: Monospace terminal-style streaming feed with color-coded operation badges (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `DDL`), session badges, and security flags.
+  - Telemetry Volume Chart: Live interactive area chart using `Recharts` showing query ingestion velocity over time.
+  - Monitored Active Sessions Table: Displays live session duration, user details, ephemeral MySQL credentials, real-time risk scores with color-coded linear meters, and a 1-click **Revoke** button that terminates the MySQL thread and drops the user.
+  - Real-Time Alerts Feed: Incident triage queue with status chips and click-to-expand evidence inspection.
+
+---
+
+### How to Test and Verify
+
+#### 1. Automated Integration Tests
+```bash
+cd backend
+npm test -- tests/sse.test.js
+```
+
+Expected output:
+```
+PASS tests/sse.test.js
+  Phase 9 Real-Time SSE Pipeline Tests
+    √ rejects /stream request without authentication token with 401 (20 ms)
+    √ denies /stream access to standard employee roles with 403 (25 ms)
+    √ connects to /stream and receives real-time broadcast telemetry (74 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+```
+
+#### 2. Live End-to-End Stream Verification Script (10 Queries)
+```bash
+node scripts/verify_phase9_live.js
+```
+
+Real CLI execution output:
+```
+=== ITDS Phase 9 Real-Time Live Pipeline Verification ===
+
+✓ Admin authenticated. Acquired JWT token.
+✓ JIT Session provisioned: User [jit_32_2cf43e] on database [target_db].
+
+Connecting to SSE stream: http://127.0.0.1:5000/stream?token=...
+
+Connecting to MySQL as ephemeral JIT account...
+Executing 10 live queries across granted, denied, and anomalous patterns:
+
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 0/100 (LOW)
+  [SSE EVENT: query_observed] #52 SELECT by jit_32_2cf43e: SELECT customer_code, company_name FROM customers LIMIT 2...
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 0/100 (LOW)
+  [SSE EVENT: query_observed] #53 SELECT by jit_32_2cf43e: SELECT contact_name, city FROM customers WHERE country = "US...
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 0/100 (LOW)
+  [SSE EVENT: query_observed] #54 SELECT by jit_32_2cf43e: SELECT order_number, total_amount FROM orders WHERE status =...
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 30/100 (MEDIUM)
+  [SSE EVENT: query_observed] #55 SELECT by jit_32_2cf43e: SELECT count(*) FROM customers...
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 55/100 (HIGH)
+  [SSE EVENT: query_observed] #56 SELECT by jit_32_2cf43e: SELECT customer_code, email FROM customers WHERE credit_limi...
+  [SSE EVENT: violation_detected] Rule: TABLE_OUT_OF_SCOPE (BLOCKED_BY_DB) - Severity: high
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 80/100 (CRITICAL)
+  [SSE EVENT: alert_created] *** SECURITY ALERT *** Insider Threat Risk Spike on Session #32 (CRITICAL - Score: 80)
+  [SSE EVENT: query_observed] #57 SELECT by jit_32_2cf43e: SELECT salary, bank_account_number FROM salaries LIMIT 1...
+  [SSE EVENT: violation_detected] Rule: UNBOUNDED_BULK_READ (DETECTED_POST_HOC) - Severity: medium
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 80/100 (CRITICAL)
+  [SSE EVENT: query_observed] #58 SELECT by jit_32_2cf43e: SELECT * FROM orders...
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 80/100 (CRITICAL)
+  [SSE EVENT: query_observed] #59 SELECT by jit_32_2cf43e: SELECT customer_code, city FROM customers LIMIT 5...
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 80/100 (CRITICAL)
+  [SSE EVENT: query_observed] #60 SELECT by jit_32_2cf43e: SELECT order_number, order_date FROM orders LIMIT 3...
+  [SSE EVENT: risk_updated] Session #32 Risk Score: 80/100 (CRITICAL)
+  [SSE EVENT: query_observed] #61 SELECT by jit_32_2cf43e: SELECT company_name, phone FROM customers LIMIT 4...
+
+=== Real-Time Pipeline Verification Summary ===
+Total live SSE events received: 24
+- query_observed events:   10
+- violation_detected:      2
+- risk_updated events:     10
+- alert_created events:    1
+
+>>> SUCCESS: All 10 queries ingested and broadcast in real time via SSE pipeline without refresh! <<<
+```
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1: Scaffold and infrastructure** (Completed)
@@ -763,5 +858,5 @@ Tests:       16 passed, 16 total
 - [x] **Phase 6: SQL activity ingestion** (Completed)
 - [x] **Phase 7: Policy evaluation of observed queries** (Completed)
 - [x] **Phase 8: Threat detection engine and risk scoring** (Completed)
-- [ ] **Phase 9: Real-time pipeline and admin dashboard**
+- [x] **Phase 9: Real-time pipeline and admin dashboard** (Completed)
 - [ ] **Phase 10: Attack simulation, testing, and demo hardening**
