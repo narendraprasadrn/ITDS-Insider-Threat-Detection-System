@@ -1453,11 +1453,7 @@ export default function SessionsPage() {
           <BootstrapIcon name="bi-check-circle-fill" size={22} color="#55E6C1" />
           <span style={{ color: '#F5F5F5', fontWeight: 700 }}>JIT Database Credentials Issued</span>
         </DialogTitle>
-        <DialogContent sx={{ pt: 3 }}>
-          <Alert severity="warning" sx={{ mb: 2.5 }}>
-            <strong>Ephemeral JIT credentials provisioned.</strong> You can connect externally with DBeaver/Workbench, or execute queries immediately inside the In-App SQL Workspace.
-          </Alert>
-
+        <DialogContent sx={{ pt: 2 }}>
           {credentialsModal.credentials && (
             <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#151A1D', borderColor: '#343F3D', fontFamily: 'monospace' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
