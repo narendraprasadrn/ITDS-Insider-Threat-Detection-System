@@ -44,7 +44,7 @@ export default function Sidebar({
     { text: 'OPA Policies', iconName: 'bi-shield-check', path: '/policies', active: true, roles: ['admin'] },
     { text: 'JIT Sessions', iconName: 'bi-key-fill', path: '/sessions', active: true },
     { text: 'SQL Workspace', iconName: 'bi-terminal', path: '/workspace', active: true },
-    { text: 'SQL Activity Log', iconName: 'bi-journal-text', path: '/sql-events', active: true, roles: ['admin', 'dba'] },
+    { text: 'Database Activity Intelligence', iconName: 'bi-journal-text', path: '/sql-events', active: true, roles: ['admin', 'dba'] },
     { text: 'Security Monitoring', iconName: 'bi-activity', path: '/monitoring', active: true, roles: ['admin', 'dba'] }
   ];
 

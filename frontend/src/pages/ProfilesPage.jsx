@@ -1,5 +1,5 @@
 // frontend/src/pages/ProfilesPage.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -28,7 +28,8 @@ import {
   Select,
   MenuItem,
   OutlinedInput,
-  Tooltip
+  Tooltip,
+  Collapse
 } from '@mui/material';
 import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -43,9 +44,16 @@ export default function ProfilesPage() {
   const [availableProfiles, setAvailableProfiles] = useState([]);
   const [allProfiles, setAllProfiles] = useState([]);
   const [resources, setResources] = useState([]);
+  const [myRequests, setMyRequests] = useState([]);
+  const [myActiveSessions, setMyActiveSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionSuccess, setActionSuccess] = useState(null);
+
+  // Collapsible restricted tables state per profile: { [profileId]: boolean }
+  const [expandedProfiles, setExpandedProfiles] = useState({});
+  // Search text for restricted tables per profile: { [profileId]: string }
+  const [tableSearchFilters, setTableSearchFilters] = useState({});
 
   // Admin: Create Profile Dialog
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
@@ -72,14 +80,28 @@ export default function ProfilesPage() {
   });
   const [submittingTableReq, setSubmittingTableReq] = useState(false);
 
+  const toggleExpandProfile = (profileId) => {
+    setExpandedProfiles((prev) => ({
+      ...prev,
+      [profileId]: !prev[profileId]
+    }));
+  };
+
+  const handleTableFilterChange = (profileId, val) => {
+    setTableSearchFilters((prev) => ({
+      ...prev,
+      [profileId]: val
+    }));
+  };
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
+      const headers = { Authorization: `Bearer ${accessToken}` };
+
       // 1. Fetch available profiles for current user's role (governed by RBAC)
-      const availRes = await fetch('/api/profiles/available', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const availRes = await fetch('/api/profiles/available', { headers });
       const availData = await availRes.json();
       if (availRes.ok && availData.success) {
         setAvailableProfiles(availData.data.profiles || []);
@@ -87,20 +109,30 @@ export default function ProfilesPage() {
         setError(availData.error?.message || 'Failed to load access profiles');
       }
 
-      // 2. Fetch resources catalog (available to all authenticated users for computing restricted tables)
-      const resRes = await fetch('/api/resources', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      // 2. Fetch resources catalog
+      const resRes = await fetch('/api/resources', { headers });
       const resData = await resRes.json();
       if (resRes.ok && resData.success) {
         setResources(resData.data.resources || []);
       }
 
-      // 3. If administrator, also fetch all system profiles
+      // 3. Fetch user's access requests (to display pending/approved status dynamically)
+      const reqRes = await fetch('/api/access-requests/my', { headers });
+      if (reqRes.ok) {
+        const reqData = await reqRes.json();
+        setMyRequests(reqData.data?.requests || []);
+      }
+
+      // 4. Fetch user's active sessions (to display active session grants)
+      const sessRes = await fetch('/api/sessions/my', { headers });
+      if (sessRes.ok) {
+        const sessData = await sessRes.json();
+        setMyActiveSessions(sessData.data?.sessions || []);
+      }
+
+      // 5. If administrator, also fetch all system profiles
       if (isAdmin) {
-        const allProfRes = await fetch('/api/profiles', {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
+        const allProfRes = await fetch('/api/profiles', { headers });
         const allProfData = await allProfRes.json();
         if (allProfRes.ok && allProfData.success) {
           setAllProfiles(allProfData.data.profiles || []);
@@ -116,6 +148,53 @@ export default function ProfilesPage() {
   useEffect(() => {
     fetchData();
   }, [isAdmin, accessToken]);
+
+  // Dynamic status evaluation for individual tables
+  const getTableAccessStatus = (tableName) => {
+    if (!tableName) return null;
+    const tNameLower = tableName.toLowerCase();
+
+    // 1. Check if user currently has an active session with this table granted
+    const hasActiveSessionGrant = myActiveSessions.some((s) => {
+      if (s.status !== 'active') return false;
+      const grants = Array.isArray(s.granted_resources) ? s.granted_resources : [];
+      return grants.some((gr) => gr.toLowerCase().endsWith(tNameLower) || gr.toLowerCase() === tNameLower);
+    });
+
+    if (hasActiveSessionGrant) {
+      return {
+        status: 'active',
+        label: 'Approved & Active',
+        color: 'success',
+        icon: 'bi-check-circle-fill'
+      };
+    }
+
+    // 2. Check pending / approved requests
+    const matchingReq = myRequests.find((r) => {
+      const targetLower = (r.target_table || '').toLowerCase();
+      return targetLower === tNameLower && ['pending', 'approved', 'active'].includes(r.status);
+    });
+
+    if (matchingReq) {
+      if (matchingReq.status === 'pending') {
+        return {
+          status: 'pending',
+          label: 'Pending Review',
+          color: 'warning',
+          icon: 'bi-clock-history'
+        };
+      }
+      return {
+        status: 'approved',
+        label: 'Approved & Active',
+        color: 'success',
+        icon: 'bi-check-circle-fill'
+      };
+    }
+
+    return null;
+  };
 
   const handleCreateProfile = async (e) => {
     e.preventDefault();
@@ -196,6 +275,8 @@ export default function ProfilesPage() {
       if (res.ok && data.success) {
         setOpenTableDialog(false);
         setActionSuccess(`Access request for table '${tableRequestForm.target_table}' submitted to approval queue.`);
+        // Refresh requests and active sessions immediately
+        fetchData();
       } else {
         setError(data.error?.message || 'Failed to submit table access request');
       }
@@ -211,7 +292,7 @@ export default function ProfilesPage() {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5, flexWrap: 'wrap', gap: 2 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 700, color: '#F5F7F7', display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <BootstrapIcon name="bi-database-lock" size={24} color="#55E6C1" /> Access Profiles & Table Governance
@@ -227,6 +308,7 @@ export default function ProfilesPage() {
             size="small"
             onClick={fetchData}
             disabled={loading}
+            sx={{ borderColor: '#364345', color: '#F5F7F7', '&:hover': { borderColor: '#55E6C1' } }}
           >
             Refresh
           </Button>
@@ -236,6 +318,7 @@ export default function ProfilesPage() {
               variant="contained"
               size="small"
               onClick={() => handleOpenTableRequest()}
+              sx={{ bgcolor: '#55E6C1', color: '#171B1C', fontWeight: 600, '&:hover': { bgcolor: '#45D6B1' } }}
             >
               Request Table Access
             </Button>
@@ -246,6 +329,7 @@ export default function ProfilesPage() {
               variant="contained"
               size="small"
               onClick={() => setOpenCreateDialog(true)}
+              sx={{ bgcolor: '#55E6C1', color: '#171B1C', fontWeight: 600, '&:hover': { bgcolor: '#45D6B1' } }}
             >
               New Profile
             </Button>
@@ -271,12 +355,12 @@ export default function ProfilesPage() {
 
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-          <CircularProgress size={32} />
+          <CircularProgress size={32} sx={{ color: '#55E6C1' }} />
         </Box>
       ) : (currentTab === 2 && isAdmin) ? (
         /* TAB 2: Resources Catalog (Admin only) */
         <Card variant="outlined" sx={{ borderRadius: 1.5, borderColor: '#364345', bgcolor: '#252E30' }}>
-          <TableContainer component={Paper} elevation={0} sx={{ maxHeight: 600 }}>
+          <TableContainer component={Paper} elevation={0} sx={{ maxHeight: 600, bgcolor: 'transparent' }}>
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow sx={{ '& th': { bgcolor: '#1F292B', fontWeight: 700, fontSize: '0.78rem', borderBottom: '1px solid #364345', color: '#AAB8BC' } }}>
@@ -296,7 +380,7 @@ export default function ProfilesPage() {
                   </TableRow>
                 ) : (
                   resources.map((r) => (
-                    <TableRow key={r.id} hover>
+                    <TableRow key={r.id} hover sx={{ '& td': { borderBottom: '1px solid #364345' } }}>
                       <TableCell sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>#{r.id}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#A6ADB4' }}>{r.db_name}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#55E6C1' }}>
@@ -321,16 +405,16 @@ export default function ProfilesPage() {
           </TableContainer>
         </Card>
       ) : (
-        /* PROFILES TABLE (Displays Accessible Tables AND Inaccessible/Restricted Tables) */
+        /* PROFILES TABLE (Displays Accessible Tables AND Collapsible Restricted Tables) */
         <Card variant="outlined" sx={{ borderRadius: 1.5, borderColor: '#343F3D', bgcolor: '#252D30' }}>
-          <TableContainer component={Paper} elevation={0} sx={{ overflowX: 'auto' }}>
-            <Table size="small" sx={{ minWidth: 800 }}>
+          <TableContainer component={Paper} elevation={0} sx={{ overflowX: 'auto', bgcolor: 'transparent' }}>
+            <Table size="small" sx={{ minWidth: 850 }}>
               <TableHead>
                 <TableRow sx={{ '& th': { bgcolor: '#1F292B', fontWeight: 700, fontSize: '0.78rem', py: 1.25, borderBottom: '1px solid #364345', color: '#AAB8BC' } }}>
-                  <TableCell width="22%">Profile / Role</TableCell>
+                  <TableCell width="22%">Profile / Scope</TableCell>
                   <TableCell width="12%">Database</TableCell>
                   <TableCell width="28%">Accessible Tables</TableCell>
-                  <TableCell width="26%">Inaccessible / Restricted Tables</TableCell>
+                  <TableCell width="26%">Restricted Tables</TableCell>
                   <TableCell width="12%" align="right">Operations</TableCell>
                 </TableRow>
               </TableHead>
@@ -349,14 +433,20 @@ export default function ProfilesPage() {
                   </TableRow>
                 ) : (
                   displayedProfiles.map((p) => {
-                    const accessibleTableNames = (p.resources || []).map(r => r.table_name);
+                    const accessibleTableNames = (p.resources || []).map((r) => r.table_name);
                     const restrictedResources = resources.filter(
-                      r => !accessibleTableNames.some(at => at.toLowerCase() === r.table_name.toLowerCase())
+                      (r) => !accessibleTableNames.some((at) => at.toLowerCase() === r.table_name.toLowerCase())
                     );
                     const targetDb = p.resources?.[0]?.db_name || 'itds_db';
+                    const isExpanded = Boolean(expandedProfiles[p.id]);
+                    const filterText = tableSearchFilters[p.id] || '';
+
+                    const filteredRestricted = restrictedResources.filter((r) =>
+                      r.table_name.toLowerCase().includes(filterText.toLowerCase().trim())
+                    );
 
                     return (
-                      <TableRow key={p.id} hover sx={{ '& td': { py: 1.5, borderBottom: '1px solid #364345' } }}>
+                      <TableRow key={p.id} hover sx={{ '& td': { py: 1.5, borderBottom: '1px solid #364345', verticalAlign: 'top' } }}>
                         {/* 1. Profile / Role */}
                         <TableCell>
                           <Typography variant="body2" sx={{ fontWeight: 600, color: '#F5F7F7', lineHeight: 1.3 }}>
@@ -364,7 +454,7 @@ export default function ProfilesPage() {
                           </Typography>
                           {p.roles && p.roles.length > 0 && (
                             <Typography variant="caption" sx={{ color: '#AAB8BC', display: 'block', mt: 0.25, fontSize: '0.72rem' }}>
-                              Role: {p.roles.map(r => r.name?.toUpperCase()).join(', ')}
+                              Role: {p.roles.map((r) => r.name?.toUpperCase()).join(', ')}
                             </Typography>
                           )}
                           <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25, fontSize: '0.7rem' }}>
@@ -379,13 +469,13 @@ export default function ProfilesPage() {
                           </Typography>
                         </TableCell>
 
-                        {/* 3. Accessible Tables */}
+                        {/* 3. Accessible Tables (Compact Mint-Green Chips) */}
                         <TableCell>
                           {accessibleTableNames.length === 0 ? (
                             <Typography variant="caption" color="text.secondary">None</Typography>
                           ) : (
                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                              {p.resources.map(r => (
+                              {p.resources.map((r) => (
                                 <Tooltip key={r.table_name} title={`Sensitivity: ${r.sensitivity || 'standard'}`}>
                                   <Chip
                                     label={r.table_name}
@@ -406,39 +496,197 @@ export default function ProfilesPage() {
                           )}
                         </TableCell>
 
-                        {/* 4. Inaccessible / Restricted Tables */}
+                        {/* 4. Restricted Tables (Collapsible with Search & Request Action) */}
                         <TableCell>
                           {restrictedResources.length === 0 ? (
-                            <Typography variant="caption" sx={{ color: '#55E6C1', fontWeight: 600 }}>
-                              Full Catalog Scope (All tables granted)
+                            <Typography variant="caption" sx={{ color: '#55E6C1', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <BootstrapIcon name="bi-check2-all" size={13} color="#55E6C1" /> Full Catalog Scope (All tables granted)
                             </Typography>
                           ) : (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                              {restrictedResources.map(r => (
-                                <Tooltip key={r.table_name} title={`Click to request access to '${r.table_name}' (${r.sensitivity} sensitivity)`}>
-                                  <Chip
-                                    icon={<BootstrapIcon name="bi-lock-fill" size={11} color="#AAB8BC" />}
-                                    label={r.table_name}
-                                    size="small"
-                                    onClick={() => handleOpenTableRequest(r.table_name)}
-                                    clickable
-                                    sx={{
-                                      height: 22,
-                                      fontSize: '0.72rem',
-                                      bgcolor: '#1F2527',
-                                      borderColor: '#435154',
-                                      color: '#AAB8BC',
-                                      border: '1px solid',
-                                      cursor: 'pointer',
-                                      '&:hover': {
-                                        borderColor: '#F59E0B',
-                                        color: '#FCD34D',
-                                        bgcolor: 'rgba(245, 158, 11, 0.1)'
-                                      }
-                                    }}
+                            <Box>
+                              {/* Collapsible Trigger */}
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => toggleExpandProfile(p.id)}
+                                startIcon={
+                                  <BootstrapIcon
+                                    name={isExpanded ? 'bi-chevron-up' : 'bi-chevron-down'}
+                                    size={12}
+                                    color="#AAB8BC"
                                   />
-                                </Tooltip>
-                              ))}
+                                }
+                                sx={{
+                                  color: '#E2E8F0',
+                                  borderColor: isExpanded ? '#55E6C1' : '#364345',
+                                  bgcolor: isExpanded ? 'rgba(85,230,193,0.08)' : 'rgba(255,255,255,0.02)',
+                                  fontSize: '0.75rem',
+                                  py: 0.35,
+                                  px: 1.25,
+                                  textTransform: 'none',
+                                  fontWeight: 600,
+                                  '&:hover': {
+                                    borderColor: '#55E6C1',
+                                    bgcolor: 'rgba(85,230,193,0.12)'
+                                  }
+                                }}
+                              >
+                                Restricted tables ({restrictedResources.length})
+                              </Button>
+
+                              {/* Expanded Panel */}
+                              <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                                <Box
+                                  sx={{
+                                    mt: 1.25,
+                                    p: 1.25,
+                                    bgcolor: '#171B1C',
+                                    border: '1px solid #364345',
+                                    borderRadius: 1.5,
+                                    maxWidth: 380
+                                  }}
+                                >
+                                  {/* Search Filter if more than 2 restricted tables */}
+                                  {restrictedResources.length > 2 && (
+                                    <TextField
+                                      size="small"
+                                      placeholder="Filter restricted tables..."
+                                      value={filterText}
+                                      onChange={(e) => handleTableFilterChange(p.id, e.target.value)}
+                                      InputProps={{
+                                        startAdornment: (
+                                          <BootstrapIcon
+                                            name="bi-search"
+                                            size={12}
+                                            color="#AAB8BC"
+                                            style={{ marginRight: 6 }}
+                                          />
+                                        )
+                                      }}
+                                      sx={{
+                                        mb: 1,
+                                        width: '100%',
+                                        '& .MuiOutlinedInput-root': {
+                                          bgcolor: '#111415',
+                                          borderRadius: 1,
+                                          height: 28
+                                        },
+                                        '& .MuiInputBase-input': {
+                                          fontSize: '0.72rem',
+                                          py: 0.25,
+                                          px: 0.75,
+                                          color: '#F5F7F7'
+                                        }
+                                      }}
+                                    />
+                                  )}
+
+                                  {/* Table Items */}
+                                  <Stack spacing={0.75} sx={{ maxHeight: 220, overflowY: 'auto', pr: 0.5 }}>
+                                    {filteredRestricted.length === 0 ? (
+                                      <Typography variant="caption" sx={{ color: '#AAB8BC', fontStyle: 'italic', py: 0.5 }}>
+                                        No restricted tables match "{filterText}"
+                                      </Typography>
+                                    ) : (
+                                      filteredRestricted.map((r) => {
+                                        const tableStatus = getTableAccessStatus(r.table_name);
+                                        const isCritical = r.sensitivity === 'critical';
+                                        const isHigh = r.sensitivity === 'high';
+
+                                        return (
+                                          <Box
+                                            key={r.table_name}
+                                            sx={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'space-between',
+                                              p: '4px 8px',
+                                              bgcolor: '#1F2527',
+                                              border: '1px solid #2B3739',
+                                              borderRadius: 1,
+                                              gap: 1
+                                            }}
+                                          >
+                                            {/* Table Name with Subtle Lock Icon */}
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+                                              <BootstrapIcon name="bi-lock-fill" size={11} color="#AAB8BC" />
+                                              <Typography
+                                                variant="body2"
+                                                sx={{
+                                                  fontFamily: 'monospace',
+                                                  fontSize: '0.75rem',
+                                                  color: '#E2E8F0',
+                                                  fontWeight: 600,
+                                                  overflow: 'hidden',
+                                                  textOverflow: 'ellipsis',
+                                                  whiteSpace: 'nowrap'
+                                                }}
+                                              >
+                                                {r.table_name}
+                                              </Typography>
+                                              <Chip
+                                                label={r.sensitivity?.toUpperCase() || 'STANDARD'}
+                                                size="small"
+                                                sx={{
+                                                  height: 16,
+                                                  fontSize: '0.58rem',
+                                                  fontWeight: 700,
+                                                  bgcolor: isCritical ? 'rgba(239,68,68,0.15)' : isHigh ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.06)',
+                                                  color: isCritical ? '#F87171' : isHigh ? '#FCD34D' : '#AAB8BC',
+                                                  borderColor: isCritical ? '#EF4444' : isHigh ? '#F59E0B' : '#364345',
+                                                  border: '1px solid'
+                                                }}
+                                              />
+                                            </Box>
+
+                                            {/* Dynamic Status or Request Action */}
+                                            <Box sx={{ flexShrink: 0 }}>
+                                              {tableStatus ? (
+                                                <Chip
+                                                  icon={<BootstrapIcon name={tableStatus.icon} size={10} color={tableStatus.color === 'warning' ? '#FCD34D' : '#55E6C1'} />}
+                                                  label={tableStatus.label}
+                                                  size="small"
+                                                  sx={{
+                                                    height: 20,
+                                                    fontSize: '0.65rem',
+                                                    fontWeight: 600,
+                                                    bgcolor: tableStatus.color === 'warning' ? 'rgba(245,158,11,0.15)' : 'rgba(85,230,193,0.12)',
+                                                    color: tableStatus.color === 'warning' ? '#FCD34D' : '#55E6C1',
+                                                    borderColor: tableStatus.color === 'warning' ? '#F59E0B' : '#55E6C1',
+                                                    border: '1px solid'
+                                                  }}
+                                                />
+                                              ) : (
+                                                <Button
+                                                  size="small"
+                                                  variant="outlined"
+                                                  onClick={() => handleOpenTableRequest(r.table_name)}
+                                                  startIcon={<BootstrapIcon name="bi-key-fill" size={10} />}
+                                                  sx={{
+                                                    height: 22,
+                                                    fontSize: '0.68rem',
+                                                    py: 0,
+                                                    px: 0.75,
+                                                    textTransform: 'none',
+                                                    borderColor: '#435154',
+                                                    color: '#55E6C1',
+                                                    '&:hover': {
+                                                      borderColor: '#55E6C1',
+                                                      bgcolor: 'rgba(85,230,193,0.1)'
+                                                    }
+                                                  }}
+                                                >
+                                                  Request access
+                                                </Button>
+                                              )}
+                                            </Box>
+                                          </Box>
+                                        );
+                                      })
+                                    )}
+                                  </Stack>
+                                </Box>
+                              </Collapse>
                             </Box>
                           )}
                         </TableCell>
@@ -485,24 +733,33 @@ export default function ProfilesPage() {
       )}
 
       {/* Table Access Request Dialog */}
-      <Dialog open={openTableDialog} onClose={() => setOpenTableDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={openTableDialog}
+        onClose={() => setOpenTableDialog(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#1E2527', border: '1px solid #364345', borderRadius: 2 } }}
+      >
         <form onSubmit={handleSubmitTableRequest}>
-          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, borderBottom: '1px solid #364345', pb: 1.5 }}>
             <BootstrapIcon name="bi-database-lock" size={20} color="#55E6C1" />
-            Request Table Access Grant
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1rem' }}>
+              Request Table Access Grant
+            </Typography>
           </DialogTitle>
-          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
             <Typography variant="body2" sx={{ color: '#AAB8BC' }}>
               Submit an out-of-scope table access request. Requests for operational tables are routed to DBA/Admin; critical tables require Administrator review.
             </Typography>
 
             <FormControl fullWidth size="small">
-              <InputLabel id="table-select-label">Target Database Table</InputLabel>
+              <InputLabel id="table-select-label" sx={{ color: '#AAB8BC' }}>Target Database Table</InputLabel>
               <Select
                 labelId="table-select-label"
                 value={tableRequestForm.target_table}
                 label="Target Database Table"
                 onChange={(e) => setTableRequestForm({ ...tableRequestForm, target_table: e.target.value })}
+                sx={{ bgcolor: '#171B1C' }}
               >
                 {resources.map((r) => (
                   <MenuItem key={r.table_name} value={r.table_name}>
@@ -513,7 +770,7 @@ export default function ProfilesPage() {
             </FormControl>
 
             <FormControl fullWidth size="small">
-              <InputLabel id="ops-label">Requested Operations</InputLabel>
+              <InputLabel id="ops-label" sx={{ color: '#AAB8BC' }}>Requested Operations</InputLabel>
               <Select
                 labelId="ops-label"
                 multiple
@@ -521,20 +778,22 @@ export default function ProfilesPage() {
                 onChange={(e) => setTableRequestForm({ ...tableRequestForm, operations: e.target.value })}
                 input={<OutlinedInput label="Requested Operations" />}
                 renderValue={(selected) => selected.join(', ')}
+                sx={{ bgcolor: '#171B1C' }}
               >
-                {['SELECT', 'INSERT', 'UPDATE'].map((op) => (
+                {ALL_OPERATIONS.map((op) => (
                   <MenuItem key={op} value={op}>{op}</MenuItem>
                 ))}
               </Select>
             </FormControl>
 
             <FormControl fullWidth size="small">
-              <InputLabel id="duration-label">Requested Duration</InputLabel>
+              <InputLabel id="duration-label" sx={{ color: '#AAB8BC' }}>Requested Duration</InputLabel>
               <Select
                 labelId="duration-label"
                 value={tableRequestForm.requested_duration_minutes}
                 label="Requested Duration"
                 onChange={(e) => setTableRequestForm({ ...tableRequestForm, requested_duration_minutes: Number(e.target.value) })}
+                sx={{ bgcolor: '#171B1C' }}
               >
                 <MenuItem value={15}>15 Minutes</MenuItem>
                 <MenuItem value={30}>30 Minutes</MenuItem>
@@ -553,10 +812,14 @@ export default function ProfilesPage() {
               placeholder="Explain the technical or business necessity for accessing this specific table..."
               value={tableRequestForm.justification}
               onChange={(e) => setTableRequestForm({ ...tableRequestForm, justification: e.target.value })}
+              sx={{
+                '& .MuiOutlinedInput-root': { bgcolor: '#171B1C' },
+                '& .MuiInputLabel-root': { color: '#AAB8BC' }
+              }}
             />
           </DialogContent>
-          <DialogActions sx={{ p: 2 }}>
-            <Button onClick={() => setOpenTableDialog(false)} disabled={submittingTableReq} size="small">
+          <DialogActions sx={{ p: 2, borderTop: '1px solid #364345' }}>
+            <Button onClick={() => setOpenTableDialog(false)} disabled={submittingTableReq} size="small" sx={{ color: '#AAB8BC' }}>
               Cancel
             </Button>
             <Button
@@ -565,6 +828,7 @@ export default function ProfilesPage() {
               disabled={submittingTableReq || !tableRequestForm.justification.trim()}
               size="small"
               startIcon={submittingTableReq ? <CircularProgress size={14} color="inherit" /> : <BootstrapIcon name="bi-send" size={14} />}
+              sx={{ bgcolor: '#55E6C1', color: '#171B1C', fontWeight: 600, '&:hover': { bgcolor: '#45D6B1' } }}
             >
               {submittingTableReq ? 'Submitting...' : 'Submit Request'}
             </Button>
@@ -574,10 +838,16 @@ export default function ProfilesPage() {
 
       {/* Admin: Create Access Profile Dialog */}
       {isAdmin && (
-        <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="sm" fullWidth>
+        <Dialog
+          open={openCreateDialog}
+          onClose={() => setOpenCreateDialog(false)}
+          maxWidth="sm"
+          fullWidth
+          PaperProps={{ sx: { bgcolor: '#1E2527', border: '1px solid #364345', borderRadius: 2 } }}
+        >
           <form onSubmit={handleCreateProfile}>
-            <DialogTitle sx={{ pb: 1 }}>Define Access Profile</DialogTitle>
-            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <DialogTitle sx={{ pb: 1, borderBottom: '1px solid #364345' }}>Define Access Profile</DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
               <TextField
                 label="Profile Name"
                 required
@@ -585,6 +855,7 @@ export default function ProfilesPage() {
                 size="small"
                 value={profileForm.name}
                 onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#171B1C' } }}
               />
               <TextField
                 label="Description"
@@ -592,6 +863,7 @@ export default function ProfilesPage() {
                 size="small"
                 value={profileForm.description}
                 onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#171B1C' } }}
               />
               <FormControl fullWidth size="small">
                 <InputLabel id="operations-label">Allowed SQL Operations</InputLabel>
@@ -602,6 +874,7 @@ export default function ProfilesPage() {
                   onChange={(e) => setProfileForm({ ...profileForm, allowed_operations: e.target.value })}
                   input={<OutlinedInput label="Allowed SQL Operations" />}
                   renderValue={(selected) => selected.join(', ')}
+                  sx={{ bgcolor: '#171B1C' }}
                 >
                   {ALL_OPERATIONS.map((op) => (
                     <MenuItem key={op} value={op}>{op}</MenuItem>
@@ -609,11 +882,17 @@ export default function ProfilesPage() {
                 </Select>
               </FormControl>
             </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-              <Button onClick={() => setOpenCreateDialog(false)} disabled={saving} size="small">
+            <DialogActions sx={{ p: 2, borderTop: '1px solid #364345' }}>
+              <Button onClick={() => setOpenCreateDialog(false)} disabled={saving} size="small" sx={{ color: '#AAB8BC' }}>
                 Cancel
               </Button>
-              <Button type="submit" variant="contained" disabled={saving} size="small">
+              <Button
+                type="submit"
+                variant="contained"
+                disabled={saving}
+                size="small"
+                sx={{ bgcolor: '#55E6C1', color: '#171B1C', fontWeight: 600, '&:hover': { bgcolor: '#45D6B1' } }}
+              >
                 {saving ? 'Saving...' : 'Create Profile'}
               </Button>
             </DialogActions>

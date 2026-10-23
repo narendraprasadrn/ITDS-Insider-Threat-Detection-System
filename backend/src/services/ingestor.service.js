@@ -236,6 +236,7 @@ class IngestorService {
     let sql = `
       SELECT se.id, se.session_id, se.user_id, se.mysql_username, se.thread_id, se.event_time,
              se.raw_sql, se.normalized_sql, se.operation, se.tables, se.flags, se.status, se.created_at,
+             se.policy_decision, se.execution_time_ms, se.rows_hint,
              u.username, u.full_name,
              p.name AS profile_name
       FROM sql_events se
@@ -270,8 +271,9 @@ class IngestorService {
 
     return rows.map(r => ({
       ...r,
-      tables: typeof r.tables === 'string' ? JSON.parse(r.tables) : r.tables,
-      flags: typeof r.flags === 'string' ? JSON.parse(r.flags) : r.flags
+      tables: typeof r.tables === 'string' ? JSON.parse(r.tables) : (r.tables || []),
+      flags: typeof r.flags === 'string' ? JSON.parse(r.flags) : (r.flags || {}),
+      policy_decision: typeof r.policy_decision === 'string' ? JSON.parse(r.policy_decision) : (r.policy_decision || null)
     }));
   }
 }
