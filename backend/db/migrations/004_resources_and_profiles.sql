@@ -56,54 +56,51 @@ CREATE TABLE `role_profiles` (
 -- SEED DATA
 -- ==========================================
 
--- Seed Resources from target_db
+-- Seed Resources from FinanceCorpDB (10 Business Tables)
 INSERT INTO `resources` (`id`, `db_name`, `table_name`, `sensitivity`, `description`) VALUES
-(1, 'target_db', 'departments', 'low', 'Company organizational divisions and department structures'),
-(2, 'target_db', 'customers', 'medium', 'Customer contact lists and credit limits'),
-(3, 'target_db', 'orders', 'medium', 'Customer transaction records and order fulfillment'),
-(4, 'target_db', 'payments', 'high', 'Financial payments, transaction methods, and settlement references'),
-(5, 'target_db', 'employees', 'medium', 'Employee roster, job titles, and contact information'),
-(6, 'target_db', 'salaries', 'critical', 'Confidential employee salaries, bank accounts, and SSN/tax IDs');
+(1, 'FinanceCorpDB', 'Employees', 'medium', 'Enterprise personnel roster, organizational hierarchy, and job titles'),
+(2, 'FinanceCorpDB', 'Customers', 'medium', 'Customer contact records, categorization, and commercial credit limits'),
+(3, 'FinanceCorpDB', 'Transactions', 'high', 'Customer financial payments, wire transfers, ACH settlements, and transaction ledgers'),
+(4, 'FinanceCorpDB', 'Products', 'low', 'Catalog of security software products, hardware appliances, and pricing'),
+(5, 'FinanceCorpDB', 'Orders', 'medium', 'Customer sales orders, fulfillment tracking, and total invoice amounts'),
+(6, 'FinanceCorpDB', 'Payroll', 'critical', 'Confidential employee salaries, bonuses, and banking payment disbursement details'),
+(7, 'FinanceCorpDB', 'VendorContracts', 'medium', 'Third-party vendor service agreements, procurement scopes, and contract values'),
+(8, 'FinanceCorpDB', 'BudgetReports', 'high', 'Departmental budget allocations, actual expenditures, and quarterly variances'),
+(9, 'FinanceCorpDB', 'TaxRecords', 'critical', 'Corporate and individual tax filings, taxable income, and regulatory tax assessments'),
+(10, 'FinanceCorpDB', 'SecurityAuditLogs', 'critical', 'Internal security audit events, authorization decisions, and access telemetry');
 
--- Seed 6 Reusable Access Profiles
+-- Seed Reusable Access Profiles
 INSERT INTO `access_profiles` (`id`, `name`, `description`, `allowed_operations`, `max_duration_minutes`, `max_rows_hint`, `risk_level`, `requires_approval`) VALUES
-(1, 'Sales & Customer Read-Only', 'Read-only access to customer accounts and orders for business reporting', '["SELECT"]', 120, 500, 'low', FALSE),
-(2, 'Support Order Processing', 'Read and write access to customers and orders for handling support tickets', '["SELECT", "INSERT", "UPDATE"]', 60, 200, 'medium', FALSE),
-(3, 'HR Staff Payroll & Compensation', 'Highly sensitive read access to employee records, compensation, and salary ledgers', '["SELECT"]', 45, 100, 'critical', TRUE),
-(4, 'DBA Schema & Maintenance', 'Full administrative database access including DDL schema alterations', '["SELECT", "INSERT", "UPDATE", "DELETE", "DDL"]', 60, 5000, 'high', TRUE),
-(5, 'Financial Audit & Reporting', 'Financial reconciliation of revenue, payment ledger, and orders', '["SELECT"]', 90, 1000, 'high', TRUE),
-(6, 'Security Incident Investigation', 'Incident forensics across all database tables for security analysts', '["SELECT"]', 30, 2000, 'high', TRUE);
+(1, 'Developer Read Profile', 'Approved read-only access to products, customers, and orders for routine application development', '["SELECT"]', 120, 500, 'low', FALSE),
+(2, 'Developer Work Profile', 'Approved read and write operations on designated application development tables', '["SELECT", "INSERT", "UPDATE"]', 60, 200, 'medium', FALSE),
+(3, 'DBA Operations Profile', 'Operational database monitoring and routine data maintenance across operational tables', '["SELECT", "INSERT", "UPDATE"]', 120, 2000, 'high', FALSE),
+(4, 'DBA Maintenance Profile', 'Full administrative database access including DDL schema alterations and table maintenance', '["SELECT", "INSERT", "UPDATE", "DELETE", "DDL"]', 60, 5000, 'high', TRUE),
+(5, 'Executive Payroll & Compensation', 'Highly sensitive read access to employee records, compensation ledgers, and tax filings', '["SELECT"]', 45, 100, 'critical', TRUE),
+(6, 'Financial Audit & Tax Reporting', 'Financial reconciliation of corporate transactions, orders, vendor contracts, and tax filings', '["SELECT"]', 90, 1000, 'high', TRUE),
+(7, 'Admin Security Administration', 'Complete authorized security administration across all ten business tables and audit logs', '["SELECT", "INSERT", "UPDATE", "DELETE"]', 60, 5000, 'critical', FALSE);
 
 -- Profile Resources Mapping
--- 1. Sales & Customer: customers (2), orders (3)
 INSERT INTO `profile_resources` (`profile_id`, `resource_id`) VALUES
-(1, 2), (1, 3);
-
--- 2. Support Order Processing: customers (2), orders (3), payments (4)
-INSERT INTO `profile_resources` (`profile_id`, `resource_id`) VALUES
-(2, 2), (2, 3), (2, 4);
-
--- 3. HR Payroll: employees (5), salaries (6), departments (1)
-INSERT INTO `profile_resources` (`profile_id`, `resource_id`) VALUES
-(3, 1), (3, 5), (3, 6);
-
--- 4. DBA Maintenance: all tables (1-6)
-INSERT INTO `profile_resources` (`profile_id`, `resource_id`) VALUES
-(4, 1), (4, 2), (4, 3), (4, 4), (4, 5), (4, 6);
-
--- 5. Financial Audit: orders (3), payments (4), departments (1)
-INSERT INTO `profile_resources` (`profile_id`, `resource_id`) VALUES
-(5, 1), (5, 3), (5, 4);
-
--- 6. Security Investigation: all tables (1-6)
-INSERT INTO `profile_resources` (`profile_id`, `resource_id`) VALUES
-(6, 1), (6, 2), (6, 3), (6, 4), (6, 5), (6, 6);
+-- 1. Developer Read: Products (4), Customers (2), Orders (5)
+(1, 4), (1, 2), (1, 5),
+-- 2. Developer Work: Products (4), Orders (5)
+(2, 4), (2, 5),
+-- 3. DBA Operations: Employees (1), Customers (2), Transactions (3), Products (4), Orders (5), VendorContracts (7), BudgetReports (8)
+(3, 1), (3, 2), (3, 3), (3, 4), (3, 5), (3, 7), (3, 8),
+-- 4. DBA Maintenance: All 10 tables
+(4, 1), (4, 2), (4, 3), (4, 4), (4, 5), (4, 6), (4, 7), (4, 8), (4, 9), (4, 10),
+-- 5. Executive Payroll: Employees (1), Payroll (6), TaxRecords (9)
+(5, 1), (5, 6), (5, 9),
+-- 6. Financial Audit: Transactions (3), Orders (5), VendorContracts (7), BudgetReports (8), TaxRecords (9)
+(6, 3), (6, 5), (6, 7), (6, 8), (6, 9),
+-- 7. Admin Security Administration: All 10 tables
+(7, 1), (7, 2), (7, 3), (7, 4), (7, 5), (7, 6), (7, 7), (7, 8), (7, 9), (7, 10);
 
 -- Role-Profiles Mapping (Roles: 1:admin, 2:dba, 3:developer)
 INSERT INTO `role_profiles` (`role_id`, `profile_id`) VALUES
 -- Admin may request any profile
-(1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6),
--- DBA: DBA Maintenance (4), Financial Audit (5), Sales & Customer Read-Only (1)
-(2, 1), (2, 4), (2, 5),
--- Developer: Sales Read-Only (1), Support Order Processing (2), HR Payroll & Compensation (3)
-(3, 1), (3, 2), (3, 3);
+(1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7),
+-- DBA: Developer Read (1), DBA Operations (3), DBA Maintenance (4), Financial Audit (6)
+(2, 1), (2, 3), (2, 4), (2, 6),
+-- Developer: Developer Read (1), Developer Work (2), Executive Payroll (5)
+(3, 1), (3, 2), (3, 5);

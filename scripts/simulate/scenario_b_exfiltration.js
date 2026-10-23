@@ -34,13 +34,13 @@ export async function runScenarioB() {
   // 4. Execute rapid, unbounded bulk export queries & out-of-profile table access
   console.log('2. Executing rapid unbounded dumps (SELECT * without LIMIT/WHERE)...');
   const queries = [
-    'SELECT * FROM customers;',
-    'SELECT * FROM orders;',
-    'SELECT * FROM customers;',
-    'SELECT * FROM orders;',
-    'SELECT * FROM departments;', // Out of profile / ungranted -> triggers denial & out-of-profile detection
-    'SELECT * FROM customers;',
-    'SELECT * FROM orders;'
+    'SELECT * FROM Customers;',
+    'SELECT * FROM Orders;',
+    'SELECT * FROM Customers;',
+    'SELECT * FROM Orders;',
+    'SELECT * FROM Employees;', // Out of profile / ungranted -> triggers denial & out-of-profile detection
+    'SELECT * FROM Customers;',
+    'SELECT * FROM Orders;'
   ];
 
   await executeQueries(conn, queries, 80); // rapid query velocity

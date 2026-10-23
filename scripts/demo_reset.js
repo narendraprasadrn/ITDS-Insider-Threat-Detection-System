@@ -114,7 +114,7 @@ async function resetDemoEnvironment() {
     console.log('\n[4/4] Re-syncing baseline profiles in `itds_app.user_baselines`...');
     await connection.query(`
       INSERT INTO \`itds_app\`.\`user_baselines\` (\`user_id\`, \`avg_velocity_qpm\`, \`typical_tables\`, \`typical_hours_start\`, \`typical_hours_end\`, \`sample_size_queries\`)
-      SELECT id, 6.0, JSON_ARRAY('target_db.customers', 'target_db.orders'), 9, 18, 120
+      SELECT id, 6.0, JSON_ARRAY('FinanceCorpDB.Products', 'FinanceCorpDB.Orders', 'FinanceCorpDB.Customers'), 9, 18, 120
       FROM \`itds_app\`.\`users\`
       WHERE \`username\` = 'developer'
       ON DUPLICATE KEY UPDATE
@@ -126,7 +126,7 @@ async function resetDemoEnvironment() {
 
     await connection.query(`
       INSERT INTO \`itds_app\`.\`user_baselines\` (\`user_id\`, \`avg_velocity_qpm\`, \`typical_tables\`, \`typical_hours_start\`, \`typical_hours_end\`, \`sample_size_queries\`)
-      SELECT id, 10.0, JSON_ARRAY('target_db.employees', 'target_db.customers', 'target_db.orders', 'target_db.salaries', 'target_db.payments', 'target_db.departments'), 8, 20, 250
+      SELECT id, 10.0, JSON_ARRAY('FinanceCorpDB.Employees', 'FinanceCorpDB.Customers', 'FinanceCorpDB.Transactions', 'FinanceCorpDB.Products', 'FinanceCorpDB.Orders', 'FinanceCorpDB.VendorContracts', 'FinanceCorpDB.BudgetReports'), 8, 20, 250
       FROM \`itds_app\`.\`users\`
       WHERE \`username\` IN ('admin', 'dba')
       ON DUPLICATE KEY UPDATE

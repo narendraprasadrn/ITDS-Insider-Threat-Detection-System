@@ -109,7 +109,7 @@ describe('Phase 6 SQL Activity Ingestion Tests', () => {
       });
 
       const uniqueMarker = `test_marker_${Date.now()}`;
-      await jitConn.query(`SELECT customer_code, company_name FROM target_db.customers WHERE city = 'Denver' LIMIT 3; -- ${uniqueMarker}`);
+      await jitConn.query(`SELECT customer_code, name FROM Customers WHERE customer_category = 'enterprise' LIMIT 3; -- ${uniqueMarker}`);
       await jitConn.end();
 
       // 3. Trigger ingestor polling cycle

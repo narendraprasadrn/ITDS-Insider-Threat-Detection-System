@@ -5,6 +5,10 @@ CREATE DATABASE IF NOT EXISTS `itds_app`
   DEFAULT CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
+CREATE DATABASE IF NOT EXISTS `FinanceCorpDB`
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
 CREATE DATABASE IF NOT EXISTS `target_db`
   DEFAULT CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
@@ -25,6 +29,8 @@ ALTER USER 'itds_admin'@'%' IDENTIFIED BY 'ItdsAdminPass123!';
 ALTER USER 'itds_admin'@'localhost' IDENTIFIED BY 'ItdsAdminPass123!';
 
 -- Target DB privileges (with grant option so it can grant table-level access to JIT users)
+GRANT ALL PRIVILEGES ON `FinanceCorpDB`.* TO 'itds_admin'@'%' WITH GRANT OPTION;
+GRANT ALL PRIVILEGES ON `FinanceCorpDB`.* TO 'itds_admin'@'localhost' WITH GRANT OPTION;
 GRANT ALL PRIVILEGES ON `target_db`.* TO 'itds_admin'@'%' WITH GRANT OPTION;
 GRANT ALL PRIVILEGES ON `target_db`.* TO 'itds_admin'@'localhost' WITH GRANT OPTION;
 

@@ -21,9 +21,9 @@ export async function runScenarioA() {
   const admin = await login('admin');
   const user = await login('developer');
 
-  // 2. Request JIT session for Sales & Customer Read-Only (profile 1)
-  console.log('1. Submitting JIT request for Sales & Customer profile...');
-  const req = await requestJitSession(user.token, 1, 30, 'Daily sales metric reporting and order status checks');
+  // 2. Request JIT session for Developer Read Profile (profile 1)
+  console.log('1. Submitting JIT request for Developer Read Profile...');
+  const req = await requestJitSession(user.token, 1, 30, 'Daily product and order status reporting');
   const credentials = req.credentials;
   const sessionId = req.sessionId || req.session_id;
   console.log(`   ✓ Session #${sessionId} provisioned for user ${credentials.username}`);
@@ -34,9 +34,9 @@ export async function runScenarioA() {
   // 4. Execute compliant, bounded business queries
   console.log('2. Executing compliant business queries with WHERE and LIMIT clauses...');
   const queries = [
-    'SELECT customer_code, company_name, city, country FROM customers WHERE country = "USA" LIMIT 10;',
-    'SELECT order_number, order_date, total_amount, status FROM orders WHERE status = "shipped" LIMIT 15;',
-    'SELECT customer_code, contact_name, phone FROM customers WHERE credit_limit >= 25000 LIMIT 5;'
+    'SELECT customer_code, name, contact_email, customer_category FROM Customers WHERE customer_category = "enterprise" LIMIT 10;',
+    'SELECT order_number, order_date, total_amount, order_status FROM Orders WHERE order_status = "shipped" LIMIT 15;',
+    'SELECT product_code, product_name, category, price FROM Products WHERE price >= 10000 LIMIT 5;'
   ];
 
   await executeQueries(conn, queries, 150);

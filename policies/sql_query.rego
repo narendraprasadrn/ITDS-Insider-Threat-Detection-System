@@ -77,11 +77,19 @@ table_in_granted_resources(table) if {
 # -------------------------------------------------------------
 # FINAL EVALUATION RESULT
 # -------------------------------------------------------------
+outcome := "DENY" if {
+    some v in violations
+    v.severity in ["critical", "high"]
+} else := "REVIEW" if {
+    count(violations) > 0
+} else := "ALLOW"
+
 allow if {
     count(violations) == 0
 }
 
 result := {
+    "outcome": outcome,
     "allow": allow,
     "violations": [v.rule | some v in violations],
     "violation_details": [v | some v in violations],

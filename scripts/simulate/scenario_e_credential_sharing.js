@@ -24,7 +24,7 @@ export async function runScenarioE() {
       port: 3306,
       user: 'root',
       password: process.env.MYSQL_ROOT_PASSWORD || 'Narendra@2006',
-      database: 'target_db'
+      database: 'FinanceCorpDB'
     });
   } catch (err) {
     console.warn('⚠️  Could not connect as root, attempting with target direct user...');
@@ -33,17 +33,17 @@ export async function runScenarioE() {
       port: 3306,
       user: 'itds_admin',
       password: 'ItdsAdminPass123!',
-      database: 'target_db'
+      database: 'FinanceCorpDB'
     });
   }
 
   // 3. Execute sensitive queries and DDL outside of any JIT session
   console.log('2. Executing unauthorized queries on sensitive tables outside any JIT session...');
   const queries = [
-    'SELECT employee_id, base_salary, bank_account_number FROM target_db.salaries LIMIT 5;',
-    'CREATE TABLE IF NOT EXISTS target_db.unattributed_audit_probe (id INT PRIMARY KEY);',
-    'SELECT customer_code, email FROM target_db.customers LIMIT 5;',
-    'DROP TABLE IF EXISTS target_db.unattributed_audit_probe;'
+    'SELECT employee_id, salary_amount, bank_account_masked FROM FinanceCorpDB.Payroll LIMIT 5;',
+    'CREATE TABLE IF NOT EXISTS FinanceCorpDB.unattributed_audit_probe (id INT PRIMARY KEY);',
+    'SELECT customer_code, contact_email FROM FinanceCorpDB.Customers LIMIT 5;',
+    'DROP TABLE IF EXISTS FinanceCorpDB.unattributed_audit_probe;'
   ];
 
   for (const q of queries) {

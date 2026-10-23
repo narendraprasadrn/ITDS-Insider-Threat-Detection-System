@@ -37,7 +37,7 @@ describe('Phase 5 JIT Sessions & MySQL User Provisioning Tests', () => {
         .post('/access-requests')
         .set('Authorization', `Bearer ${devToken}`)
         .send({
-          profile_id: 1, // Sales & Customer Read-Only
+          profile_id: 1, // Developer Read Profile
           requested_duration_minutes: 30,
           justification: 'Quarterly sales territory reporting analysis'
         });
@@ -72,13 +72,13 @@ describe('Phase 5 JIT Sessions & MySQL User Provisioning Tests', () => {
         database: env.DB.TARGET_NAME
       });
 
-      const [rows] = await jitConn.query('SELECT count(*) AS cust_count FROM target_db.customers');
-      expect(Number(rows[0].cust_count)).toBeGreaterThanOrEqual(100);
+      const [rows] = await jitConn.query(`SELECT count(*) AS cust_count FROM \`${env.DB.TARGET_NAME}\`.\`Customers\``);
+      expect(Number(rows[0].cust_count)).toBeGreaterThanOrEqual(10);
 
       await jitConn.end();
     });
 
-    it('ephemeral JIT user is DENIED access to ungranted table (salaries)', async () => {
+    it('ephemeral JIT user is DENIED access to ungranted table (Payroll)', async () => {
       const jitConn = await mysql.createConnection({
         host: env.DB.HOST,
         port: env.DB.PORT,
@@ -87,15 +87,15 @@ describe('Phase 5 JIT Sessions & MySQL User Provisioning Tests', () => {
         database: env.DB.TARGET_NAME
       });
 
-      // Attempting to query ungranted table 'salaries' must throw MySQL permission error (1142)
+      // Attempting to query ungranted table 'Payroll' must throw MySQL permission error (1142)
       await expect(
-        jitConn.query('SELECT * FROM target_db.salaries LIMIT 1')
+        jitConn.query(`SELECT * FROM \`${env.DB.TARGET_NAME}\`.\`Payroll\` LIMIT 1`)
       ).rejects.toThrow(/SELECT command denied to user/i);
 
       await jitConn.end();
     });
 
-    it('ephemeral JIT user is DENIED ungranted operation (DELETE on customers)', async () => {
+    it('ephemeral JIT user is DENIED ungranted operation (DELETE on Customers)', async () => {
       const jitConn = await mysql.createConnection({
         host: env.DB.HOST,
         port: env.DB.PORT,
@@ -106,7 +106,7 @@ describe('Phase 5 JIT Sessions & MySQL User Provisioning Tests', () => {
 
       // Attempting ungranted DELETE operation must fail with permission error
       await expect(
-        jitConn.query('DELETE FROM target_db.customers WHERE customer_id = 999')
+        jitConn.query(`DELETE FROM \`${env.DB.TARGET_NAME}\`.\`Customers\` WHERE customer_code = 'CUST-001'`)
       ).rejects.toThrow(/DELETE command denied to user/i);
 
       await jitConn.end();
@@ -119,7 +119,7 @@ describe('Phase 5 JIT Sessions & MySQL User Provisioning Tests', () => {
         .post('/access-requests')
         .set('Authorization', `Bearer ${devToken}`)
         .send({
-          profile_id: 3, // HR Staff Payroll & Compensation
+          profile_id: 5, // Executive Payroll & Compensation
           requested_duration_minutes: 45,
           justification: 'Annual compensation benchmarking and payroll audit'
         });
@@ -166,8 +166,8 @@ describe('Phase 5 JIT Sessions & MySQL User Provisioning Tests', () => {
         database: env.DB.TARGET_NAME
       });
 
-      const [salRows] = await hrConn.query('SELECT count(*) AS sal_count FROM target_db.salaries');
-      expect(Number(salRows[0].sal_count)).toBeGreaterThanOrEqual(100);
+      const [salRows] = await hrConn.query(`SELECT count(*) AS sal_count FROM \`${env.DB.TARGET_NAME}\`.\`Payroll\``);
+      expect(Number(salRows[0].sal_count)).toBeGreaterThanOrEqual(15);
 
       await hrConn.end();
     });

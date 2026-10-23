@@ -34,12 +34,12 @@ export async function runScenarioC() {
   // 4. Execute unauthorized DML, DDL, and cross-schema enumeration
   console.log('2. Executing unauthorized DELETE, DROP TABLE, and schema enumeration queries...');
   const queries = [
-    'DELETE FROM customers WHERE customer_code = "CUST-001";', // Unauthorized DML -> blocked_by_db
-    'DROP TABLE customers;',                                   // Unauthorized DDL -> blocked_by_db
+    'DELETE FROM Customers WHERE customer_code = "CUST-001";', // Unauthorized DML -> blocked_by_db
+    'DROP TABLE Customers;',                                   // Unauthorized DDL -> blocked_by_db
     'CREATE TABLE attack_dump (id INT PRIMARY KEY);',          // Unauthorized DDL -> blocked_by_db
     'SELECT table_name, table_schema FROM information_schema.tables WHERE table_schema = "itds_app";', // Cross-schema recon
     'SELECT user, host FROM mysql.user;',                      // Probing system authentication tables
-    'DELETE FROM orders WHERE id = 1;'                         // Repeated ungranted write attempt
+    'DELETE FROM Orders WHERE id = 1;'                         // Repeated ungranted write attempt
   ];
 
   await executeQueries(conn, queries, 90);

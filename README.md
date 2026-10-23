@@ -65,15 +65,19 @@ Insider-vf/
 - **Docker Compose (`docker-compose.yml`)**: Multi-container definition launching:
   - MySQL 8 with flags `--log-output=TABLE --general-log=1 --default-authentication-plugin=mysql_native_password`
   - OPA (Open Policy Agent) in server mode on port `8181`, mounting `./policies`.
-- **Database Initialization & Schemas (`scripts/mysql-init/`)**:
-  - `01_init_schemas.sql`: Creates `itds_app` and `target_db` schemas, enables table-based general logging, and provisions `itds_admin` with `CREATE USER`, `PROCESS`, `GRANT OPTION`, and `SELECT` on `mysql.general_log`.
-  - `02_seed_target_db.sql`: Populates `target_db` with **556 realistic seed rows** across 6 tables:
-    - `departments` (6 rows)
-    - `employees` (100 rows)
-    - `salaries` (100 rows with sensitive compensation, SSN, and bank accounts)
-    - `customers` (100 rows with credit limits)
-    - `orders` (150 rows)
-    - `payments` (100 rows)
+- **Database Initialization & Schemas (`scripts/mysql-init/` & `scripts/init_financecorp_db.sql`)**:
+  - `01_init_schemas.sql`: Creates `itds_app` and `FinanceCorpDB` schemas, enables table-based general logging, and provisions `itds_admin` with `CREATE USER`, `PROCESS`, `GRANT OPTION`, and `SELECT` on `mysql.general_log`.
+  - `init_financecorp_db.sql` & `seed_financecorp_db.sql`: Schema and synthetic datasets for all **10 FinanceCorpDB business tables**:
+    - `Employees` (20 rows with department, status, hire date)
+    - `Customers` (15 rows with categories, credit limits)
+    - `Transactions` (20 rows with types, amounts, foreign keys to Customers)
+    - `Products` (15 rows with pricing, stock)
+    - `Orders` (15 rows with status, totals, foreign keys)
+    - `Payroll` (20 rows with sensitive salary amounts, pay periods)
+    - `VendorContracts` (10 rows with contract values, active dates)
+    - `BudgetReports` (8 rows with departmental allocations vs actuals)
+    - `TaxRecords` (12 rows with tax filing status, amounts)
+    - `SecurityAuditLogs` (15 rows with security actor events and safe metadata)
 - **Backend Architecture (`/backend`)**:
   - Node.js Express app configured as ESM (`"type": "module"`).
   - Clean modular structure: `routes/`, `controllers/`, `services/`, `middleware/`, `db/`, `config/`.
@@ -190,15 +194,12 @@ Expected output:
 ### What Was Built
 - **Database Schema & Seed Data (`itds_app`)** ([`scripts/mysql-init/03_init_auth_rbac.sql`](file:///D:/Insider-vf/scripts/mysql-init/03_init_auth_rbac.sql)):
   - Core security tables: `users`, `roles`, `permissions`, `role_permissions`, `user_roles`, `refresh_tokens`, and `audit_log`.
-  - Six organizational roles: `admin`, `security_analyst`, `dba`, `developer`, `analyst`, `hr_staff`.
+  - Three primary organizational roles: `admin`, `dba`, `developer`.
   - Granular permissions: `users:manage`, `audit:read`, `profiles:manage`, `sessions:request`, `sessions:approve`, `sessions:revoke`, `threats:view`, `threats:manage`.
-  - Seeded 1 active user per role with bcrypt-hashed passwords (`Password123!`):
+  - Seeded active users per role with bcrypt-hashed passwords (`Password123!`):
     - `admin` (`admin@itds.internal`)
-    - `security_analyst` (`sec_analyst@itds.internal`)
     - `dba` (`dba@itds.internal`)
     - `developer` (`dev@itds.internal`)
-    - `analyst` (`analyst@itds.internal`)
-    - `hr_staff` (`hr_staff@itds.internal`)
 - **Backend Auth & RBAC Services & Endpoints**:
   - `POST /auth/login` (`POST /api/auth/login`): Validates password with `bcrypt.compare`, issues JWT access token + secure refresh token, and logs to `audit_log`.
   - `POST /auth/refresh`: Rotates refresh tokens and issues fresh access tokens.
@@ -314,14 +315,25 @@ Ran all test suites.
   - `access_profiles`: Reusable profiles defining permitted SQL operations (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `DDL`), max duration (minutes), max rows hint, risk level, and `requires_approval` boolean.
   - `profile_resources`: Many-to-many profile to resource mapping.
   - `role_profiles`: Many-to-many role to profile mapping governing which employee roles may request which profiles.
-  - Seeded 6 organizational tables in `target_db` (from low-sensitivity `departments` to critical-sensitivity `salaries`).
-  - Seeded 6 distinct reusable access profiles:
-    1. *Sales & Customer Read-Only* (Analyst, Developer, Admin | Auto-Approve | Low risk)
-    2. *Support Order Processing* (Developer, Admin | Auto-Approve | Medium risk)
-    3. *HR Staff Payroll & Compensation* (HR Staff, Admin | Requires Approval | Critical risk)
-    4. *DBA Schema & Maintenance* (DBA, Admin | Requires Approval | DDL | High risk)
-    5. *Financial Audit & Reporting* (Analyst, Security Analyst, Admin | Requires Approval | High risk)
-    6. *Security Incident Investigation* (Security Analyst, Admin | Requires Approval | High risk)
+  - Seeded all 10 business tables in `FinanceCorpDB`:
+    - `Employees` (medium)
+    - `Customers` (low)
+    - `Transactions` (high)
+    - `Products` (low)
+    - `Orders` (low)
+    - `Payroll` (critical)
+    - `VendorContracts` (high)
+    - `BudgetReports` (high)
+    - `TaxRecords` (critical)
+    - `SecurityAuditLogs` (critical)
+  - Seeded 7 reusable access profiles:
+    1. *Developer Read Profile* (Developer, Admin | Auto-Approved | Products, Customers, Orders)
+    2. *Developer Work Profile* (Developer, Admin | Auto-Approved | Products, Orders | SELECT, INSERT, UPDATE)
+    3. *DBA Operations Profile* (DBA, Admin | Auto-Approved | Employees, Customers, Transactions, Products, Orders, VendorContracts, BudgetReports | SELECT, INSERT, UPDATE)
+    4. *DBA Maintenance Profile* (DBA, Admin | Requires Approval | All 10 tables | SELECT, INSERT, UPDATE, DELETE, DDL)
+    5. *Executive Payroll & Compensation* (Admin | Requires Approval | Employees, Payroll, TaxRecords | Critical risk)
+    6. *Financial Audit & Tax Reporting* (DBA, Admin | Requires Approval | Transactions, Orders, BudgetReports, TaxRecords, VendorContracts | High risk)
+    7. *Admin Security Administration* (Admin | Auto-Approved | All 10 tables | Full DDL/DML access)
 - **Backend Services & Endpoints**:
   - `profileService` and `resourceService` providing full CRUD operations.
   - `GET /profiles/available` (`GET /api/profiles/available`): Evaluates authenticated user's assigned roles and returns only permitted profiles.

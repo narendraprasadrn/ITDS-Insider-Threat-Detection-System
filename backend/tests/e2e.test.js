@@ -48,12 +48,12 @@ describe('Phase 10 End-to-End Pipeline Integration Test', () => {
   });
 
   it('Step 1 -> 2: User requests profile requiring approval; OPA routes to pending queue', async () => {
-    // Profile 3: HR Staff Payroll & Compensation (requires approval)
+    // Profile 5: Executive Payroll & Compensation (requires approval)
     const res = await request(app)
       .post('/access-requests')
       .set('Authorization', `Bearer ${devToken}`)
       .send({
-        profile_id: 3,
+        profile_id: 5,
         requested_duration_minutes: 30,
         justification: 'E2E full lifecycle integration test for Phase 10'
       });
@@ -93,7 +93,7 @@ describe('Phase 10 End-to-End Pipeline Integration Test', () => {
     jitCreds = approveRes.body.data.credentials;
 
     expect(jitCreds.username).toMatch(/^jit_\d+_[a-f0-9]+$/);
-    expect(jitCreds.database).toBe('target_db');
+    expect(jitCreds.database).toBe(env.DB.TARGET_NAME);
   });
 
   it('Step 5: Connect as ephemeral JIT MySQL user and execute compliant, blocked, and unbounded queries', async () => {
@@ -107,12 +107,12 @@ describe('Phase 10 End-to-End Pipeline Integration Test', () => {
 
     try {
       // 1. Compliant query with LIMIT
-      await conn.query('SELECT employee_id, first_name, email FROM employees LIMIT 2;');
+      await conn.query('SELECT employee_code, name, email FROM Employees LIMIT 2;');
 
-      // 2. Blocked out-of-scope query on ungranted customers table (MySQL pre-execution denial)
+      // 2. Blocked out-of-scope query on ungranted Customers table (MySQL pre-execution denial)
       let blockedError = null;
       try {
-        await conn.query('SELECT customer_code FROM customers LIMIT 1;');
+        await conn.query('SELECT customer_code FROM Customers LIMIT 1;');
       } catch (err) {
         blockedError = err;
       }
@@ -121,15 +121,15 @@ describe('Phase 10 End-to-End Pipeline Integration Test', () => {
 
       // 3. Repeated blocked query to trigger rapid failed queries detector
       try {
-        await conn.query('SELECT * FROM departments LIMIT 1;');
+        await conn.query('SELECT * FROM Products LIMIT 1;');
       } catch (err) {
         // expected blocked
       }
 
-      // 4. Unbounded bulk reads (SELECT * without LIMIT or WHERE on salaries)
-      await conn.query('SELECT * FROM salaries;');
-      await conn.query('SELECT * FROM employees;');
-      await conn.query('SELECT employee_id, base_salary, bonus FROM salaries;');
+      // 4. Unbounded bulk reads (SELECT * without LIMIT or WHERE on Payroll)
+      await conn.query('SELECT * FROM Payroll;');
+      await conn.query('SELECT * FROM Employees;');
+      await conn.query('SELECT employee_id, salary_amount, bonus_amount FROM Payroll;');
     } finally {
       await conn.end();
     }

@@ -98,7 +98,7 @@ export const sqlParserService = {
         .map(t => t.includes('.') ? t.split('.')[0] : null)
         .filter(Boolean);
       const uniqueSchemas = [...new Set(schemas)];
-      const isCrossSchema = uniqueSchemas.length > 1 || (uniqueSchemas.length === 1 && !['target_db', ''].includes(uniqueSchemas[0]));
+      const isCrossSchema = uniqueSchemas.length > 1 || (uniqueSchemas.length === 1 && !['FinanceCorpDB', 'target_db', ''].includes(uniqueSchemas[0]));
 
       // Check unbounded bulk read
       const isUnboundedRead = (opType === 'SELECT' && selectStar && !hasLimit) ||
@@ -173,7 +173,7 @@ export const sqlParserService = {
       .map(t => t.includes('.') ? t.split('.')[0] : null)
       .filter(Boolean);
     const uniqueSchemas = [...new Set(schemas)];
-    const isCrossSchema = uniqueSchemas.length > 1 || (uniqueSchemas.length === 1 && !['target_db', ''].includes(uniqueSchemas[0]));
+    const isCrossSchema = uniqueSchemas.length > 1 || (uniqueSchemas.length === 1 && !['FinanceCorpDB', 'target_db', ''].includes(uniqueSchemas[0]));
     const isUnboundedRead = (operation === 'SELECT' && selectStar && !hasLimit) ||
                             (operation === 'SELECT' && !hasWhere && !hasLimit);
 

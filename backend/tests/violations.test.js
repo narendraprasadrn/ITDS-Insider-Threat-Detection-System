@@ -26,9 +26,9 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
       .send({ username: 'developer', password: 'Password123!' });
     devToken = devRes.body.data.accessToken;
 
-    // 3. Find "Sales & Customer Read-Only" profile (profile_id 1)
+    // 3. Find "Developer Read Profile"
     const [profiles] = await pool.query(
-      `SELECT id, name FROM access_profiles WHERE name = 'Sales & Customer Read-Only' LIMIT 1`
+      `SELECT id, name FROM access_profiles WHERE name = 'Developer Read Profile' LIMIT 1`
     );
     const profileId = profiles[0].id;
 
@@ -69,12 +69,12 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
       port: env.DB.PORT,
       user: jitCreds.username,
       password: jitCreds.password,
-      database: 'target_db'
+      database: 'FinanceCorpDB'
     });
 
     try {
       // Execute compliant query with LIMIT
-      await conn.query('SELECT customer_code, company_name FROM customers WHERE city = "New York" LIMIT 2;');
+      await conn.query('SELECT customer_code, name FROM Customers WHERE customer_category = "enterprise" LIMIT 2;');
     } finally {
       await conn.end();
     }
@@ -84,7 +84,7 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
 
     // Verify no violations for this specific compliant query
     const violations = await violationService.listViolations({ sessionId: jitSessionId });
-    const compliantViolations = violations.filter(v => v.raw_sql.includes('city = "New York"'));
+    const compliantViolations = violations.filter(v => v.raw_sql.includes('customer_category = "enterprise"'));
     expect(compliantViolations.length).toBe(0);
   });
 
@@ -94,13 +94,13 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
       port: env.DB.PORT,
       user: jitCreds.username,
       password: jitCreds.password,
-      database: 'target_db'
+      database: 'FinanceCorpDB'
     });
 
     let dbError = null;
     try {
-      // Attempt query against ungranted salaries table
-      await conn.query('SELECT salary FROM salaries LIMIT 1;');
+      // Attempt query against ungranted Payroll table
+      await conn.query('SELECT salary_amount FROM Payroll LIMIT 1;');
     } catch (err) {
       dbError = err;
     } finally {
@@ -118,7 +118,7 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
     const violations = await violationService.listViolations({ sessionId: jitSessionId, rule: 'TABLE_OUT_OF_SCOPE' });
     expect(violations.length).toBeGreaterThanOrEqual(1);
 
-    const match = violations.find(v => v.raw_sql.includes('salaries'));
+    const match = violations.find(v => v.raw_sql.toLowerCase().includes('payroll'));
     expect(match).toBeDefined();
     expect(match.severity).toBe('high');
     expect(match.enforcement_type).toBe('blocked_by_db');
@@ -130,13 +130,13 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
       port: env.DB.PORT,
       user: jitCreds.username,
       password: jitCreds.password,
-      database: 'target_db'
+      database: 'FinanceCorpDB'
     });
 
     let dbError = null;
     try {
-      // Attempt ungranted DELETE on customers table
-      await conn.query('DELETE FROM customers WHERE customer_id = 99999;');
+      // Attempt ungranted DELETE on Customers table
+      await conn.query('DELETE FROM Customers WHERE id = 99999;');
     } catch (err) {
       dbError = err;
     } finally {
@@ -154,7 +154,7 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
     const violations = await violationService.listViolations({ sessionId: jitSessionId, rule: 'OPERATION_NOT_GRANTED' });
     expect(violations.length).toBeGreaterThanOrEqual(1);
 
-    const match = violations.find(v => v.raw_sql.includes('DELETE FROM customers'));
+    const match = violations.find(v => v.raw_sql.toUpperCase().includes('DELETE FROM CUSTOMERS'));
     expect(match).toBeDefined();
     expect(match.severity).toBe('high');
     expect(match.enforcement_type).toBe('blocked_by_db');
@@ -166,13 +166,13 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
       port: env.DB.PORT,
       user: jitCreds.username,
       password: jitCreds.password,
-      database: 'target_db'
+      database: 'FinanceCorpDB'
     });
 
     let result = null;
     try {
-      // Execute unbounded SELECT * on granted orders table (succeeds at DB level)
-      [result] = await conn.query('SELECT * FROM orders;');
+      // Execute unbounded SELECT * on granted Orders table (succeeds at DB level)
+      [result] = await conn.query('SELECT * FROM Orders;');
     } finally {
       await conn.end();
     }
@@ -186,7 +186,7 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
     const violations = await violationService.listViolations({ sessionId: jitSessionId, rule: 'UNBOUNDED_BULK_READ' });
     expect(violations.length).toBeGreaterThanOrEqual(1);
 
-    const match = violations.find(v => v.raw_sql.includes('SELECT * FROM orders'));
+    const match = violations.find(v => v.raw_sql.toUpperCase().includes('SELECT * FROM ORDERS'));
     expect(match).toBeDefined();
     expect(match.severity).toBe('medium');
     expect(match.enforcement_type).toBe('detected_post_hoc');

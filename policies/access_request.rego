@@ -121,6 +121,12 @@ allow if {
 # -------------------------------------------------------------
 # UNIFIED DECISION OBJECT
 # -------------------------------------------------------------
+outcome := "DENY" if {
+    deny
+} else := "REVIEW" if {
+    require_approval
+} else := "ALLOW"
+
 action := "deny" if {
     deny
 } else := "require_approval" if {
@@ -134,6 +140,7 @@ reasons := [r | some r in deny_reasons] if {
 } else := ["Request meets standard auto-approval criteria within business boundaries"]
 
 decision := {
+    "outcome": outcome,
     "action": action,
     "allow": allow,
     "require_approval": require_approval,

@@ -40,11 +40,11 @@ export async function runScenarioD() {
   );
   await dbConn.end();
 
-  // 3. Request JIT session for HR Payroll profile (profile_id: 3, requires approval)
-  console.log('1. Submitting JIT request for HR Staff Payroll & Compensation profile...');
+  // 3. Request JIT session for Executive Payroll profile (profile_id: 5, requires approval)
+  console.log('1. Submitting JIT request for Executive Payroll & Compensation profile...');
   const req = await requestJitSession(
     user.token,
-    3,
+    5,
     30,
     'Urgent emergency payroll reconciliation run'
   );
@@ -63,11 +63,11 @@ export async function runScenarioD() {
   // 6. Execute bulk unbounded dumps on sensitive salaries and employee data during off-hours
   console.log('2. Executing rapid bulk dumps of sensitive payroll salaries and banking details...');
   const queries = [
-    'SELECT employee_id, base_salary, bonus, bank_account_number, tax_id FROM salaries;',
-    'SELECT * FROM employees;',
-    'SELECT employee_id, base_salary, bank_account_number FROM salaries;',
-    'SELECT * FROM employees WHERE status = "active";',
-    'SELECT count(*) FROM salaries;'
+    'SELECT employee_id, salary_amount, bonus_amount, bank_account_masked FROM Payroll;',
+    'SELECT * FROM Employees;',
+    'SELECT employee_id, salary_amount, bank_account_masked FROM Payroll;',
+    'SELECT * FROM Employees WHERE status = "active";',
+    'SELECT count(*) FROM Payroll;'
   ];
 
   await executeQueries(conn, queries, 80);

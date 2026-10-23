@@ -46,12 +46,12 @@ describe('Phase 3 Resources & Access Profiles Test Suite', () => {
       expect(res.body.success).toBe(true);
 
       const profileNames = res.body.data.profiles.map(p => p.name);
-      expect(profileNames).toContain('Sales & Customer Read-Only');
-      expect(profileNames).toContain('Support Order Processing');
+      expect(profileNames).toContain('Developer Read Profile');
+      expect(profileNames).toContain('Developer Work Profile');
 
       // Crucial: Developer MUST NOT see DBA Maintenance or Financial Audit
-      expect(profileNames).not.toContain('DBA Schema & Maintenance');
-      expect(profileNames).not.toContain('Financial Audit & Reporting');
+      expect(profileNames).not.toContain('DBA Maintenance Profile');
+      expect(profileNames).not.toContain('Financial Audit & Tax Reporting');
     });
 
     it('dba sees only DBA maintenance and permitted profiles', async () => {
@@ -63,8 +63,8 @@ describe('Phase 3 Resources & Access Profiles Test Suite', () => {
       expect(res.body.success).toBe(true);
 
       const profileNames = res.body.data.profiles.map(p => p.name);
-      expect(profileNames).toContain('DBA Schema & Maintenance');
-      expect(profileNames).not.toContain('Support Order Processing');
+      expect(profileNames).toContain('DBA Maintenance Profile');
+      expect(profileNames).not.toContain('Developer Work Profile');
     });
   });
 
@@ -79,14 +79,14 @@ describe('Phase 3 Resources & Access Profiles Test Suite', () => {
       expect(res.body.error.code).toBe('FORBIDDEN_ROLE');
     });
 
-    it('admin can list all 6 access profiles', async () => {
+    it('admin can list all access profiles', async () => {
       const res = await request(app)
         .get('/api/profiles')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.profiles.length).toBeGreaterThanOrEqual(6);
+      expect(res.body.data.profiles.length).toBeGreaterThanOrEqual(7);
     });
 
     it('admin can create a new reusable access profile', async () => {
@@ -101,7 +101,7 @@ describe('Phase 3 Resources & Access Profiles Test Suite', () => {
           max_rows_hint: 200,
           risk_level: 'low',
           requires_approval: false,
-          resource_ids: [2, 3], // customers, orders
+          resource_ids: [2, 5], // Customers, Orders
           role_ids: [3] // developer
         });
 
@@ -155,21 +155,22 @@ describe('Phase 3 Resources & Access Profiles Test Suite', () => {
   });
 
   describe('Resources CRUD (/api/resources)', () => {
-    it('admin can list target_db resources with sensitivity levels', async () => {
+    it('admin can list FinanceCorpDB resources with sensitivity levels', async () => {
       const res = await request(app)
         .get('/api/resources')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.resources.length).toBeGreaterThanOrEqual(6);
+      expect(res.body.data.resources.length).toBeGreaterThanOrEqual(10);
 
       const tableNames = res.body.data.resources.map(r => r.table_name);
-      expect(tableNames).toContain('salaries');
-      expect(tableNames).toContain('customers');
+      expect(tableNames).toContain('Payroll');
+      expect(tableNames).toContain('Customers');
+      expect(tableNames).toContain('SecurityAuditLogs');
 
-      const salariesResource = res.body.data.resources.find(r => r.table_name === 'salaries');
-      expect(salariesResource.sensitivity).toBe('critical');
+      const payrollResource = res.body.data.resources.find(r => r.table_name === 'Payroll');
+      expect(payrollResource.sensitivity).toBe('critical');
     });
   });
 });
