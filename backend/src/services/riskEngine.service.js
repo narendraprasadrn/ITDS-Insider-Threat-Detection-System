@@ -357,12 +357,17 @@ class RiskEngineService {
     const [[openAlertsRow]] = await pool.query(
       `SELECT count(*) as count FROM alerts WHERE status = 'open'`
     );
-    const [[critAlertsRow]] = await pool.query(
-      `SELECT count(*) as count FROM alerts WHERE status = 'open' AND severity IN ('critical', 'high')`
-    );
-    const [[critViolsRow]] = await pool.query(
-      `SELECT count(*) as count FROM policy_violations WHERE severity IN ('critical', 'high')`
-    );
+    const [[critIncidentsRow]] = await pool.query(`
+      SELECT count(DISTINCT incident_key) as count FROM (
+        SELECT CONCAT('alert_', id) as incident_key FROM alerts WHERE status = 'open' AND severity IN ('critical', 'high')
+        UNION ALL
+        SELECT CONCAT('viol_', pv.event_id) as incident_key FROM policy_violations pv
+        WHERE pv.severity IN ('critical', 'high')
+          AND NOT EXISTS (
+            SELECT 1 FROM alerts a WHERE a.session_id = pv.session_id AND a.status = 'open'
+          )
+      ) as incidents
+    `);
     const [[violsRow]] = await pool.query(`
       SELECT 
         count(*) as total,
@@ -370,6 +375,9 @@ class RiskEngineService {
         sum(CASE WHEN enforcement_type = 'detected_post_hoc' THEN 1 ELSE 0 END) as detected_post_hoc
       FROM policy_violations
     `);
+    const [[sqlRow]] = await pool.query(
+      `SELECT count(*) as count FROM sql_events`
+    );
     const [[sessionsRow]] = await pool.query(`
       SELECT 
         count(*) as total_sessions,
@@ -389,11 +397,11 @@ class RiskEngineService {
     `);
 
     const openAlertsCount = Number(openAlertsRow?.count || 0);
-    const critAlertsCount = Number(critAlertsRow?.count || 0);
-    const critViolsCount = Number(critViolsRow?.count || 0);
+    const criticalHighCount = Number(critIncidentsRow?.count || 0);
     const totalViolationsCount = Number(violsRow?.total || 0);
     const blockedPreExecCount = Number(violsRow?.blocked_pre_exec || 0);
     const detectedPostHocCount = Number(violsRow?.detected_post_hoc || 0);
+    const totalSqlActivityCount = Number(sqlRow?.count || 0);
     const activeSessionsCount = Number(sessionsRow?.active_sessions || 0);
     const totalSessionsCount = Number(sessionsRow?.total_sessions || 0);
     const sessionsAtRiskCount = Number(atRiskRow?.count || 0);
@@ -401,12 +409,13 @@ class RiskEngineService {
 
     return {
       open_alerts_count: openAlertsCount,
-      critical_high_count: critAlertsCount + critViolsCount,
+      critical_high_count: criticalHighCount,
       total_violations_count: totalViolationsCount,
-      blocked_pre_exec_count: blockedPreExecCount,
-      detected_post_hoc_count: detectedPostHocCount,
       sessions_at_risk_count: sessionsAtRiskCount,
       all_sessions_at_risk_count: allSessionsAtRiskCount,
+      total_sql_activity_count: totalSqlActivityCount,
+      blocked_pre_exec_count: blockedPreExecCount,
+      detected_post_hoc_count: detectedPostHocCount,
       active_sessions_count: activeSessionsCount,
       total_sessions_count: totalSessionsCount
     };

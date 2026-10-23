@@ -13,7 +13,7 @@
     "dev:frontend": "npm --prefix frontend run dev",
     "build:frontend": "npm --prefix frontend run build",
     "verify:phase1": "node --input-type=module -e \"import('./scripts/verify_phase1.js')\"",
-    "demo:reset": "node scripts/demo_reset.js",
+    "demo:reset": "node scripts/reset_demo_data.js --confirm",
     "simulate:all": "node scripts/simulate/run_all.js",
     "simulate:a": "node scripts/simulate/scenario_a_normal.js",
     "simulate:b": "node scripts/simulate/scenario_b_exfiltration.js",

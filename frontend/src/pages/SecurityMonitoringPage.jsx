@@ -147,20 +147,17 @@ export default function SecurityMonitoringPage() {
     es.addEventListener('violation_detected', (event) => {
       try {
         const v = JSON.parse(event.data);
-        setViolations((prev) => [v, ...prev.filter(item => item.id !== v.id).slice(0, 249)]);
-        setStats((prev) => {
-          if (!prev) return null;
-          const isBlocked = ['blocked_pre_execution', 'blocked_by_db'].includes(v.enforcement_type);
-          const isPostHoc = v.enforcement_type === 'detected_post_hoc';
-          const isCrit = ['critical', 'high'].includes(v.severity);
-          return {
-            ...prev,
-            total_violations_count: prev.total_violations_count + 1,
-            blocked_pre_exec_count: isBlocked ? prev.blocked_pre_exec_count + 1 : prev.blocked_pre_exec_count,
-            detected_post_hoc_count: isPostHoc ? prev.detected_post_hoc_count + 1 : prev.detected_post_hoc_count,
-            critical_high_count: isCrit ? prev.critical_high_count + 1 : prev.critical_high_count
-          };
+        setViolations((prev) => {
+          if (prev.some((item) => item.id === v.id)) return prev;
+          return [v, ...prev.slice(0, 249)];
         });
+        // Refresh verified server-side statistics without manual counter drift
+        fetch('/api/monitoring-stats', { headers: { Authorization: `Bearer ${accessToken}` } })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success) setStats(d.data);
+          })
+          .catch(() => {});
       } catch (e) {
         console.error('SSE violation parse error:', e);
       }
@@ -169,16 +166,16 @@ export default function SecurityMonitoringPage() {
     es.addEventListener('alert_created', (event) => {
       try {
         const a = JSON.parse(event.data);
-        setAlerts((prev) => [a, ...prev.filter(item => item.id !== a.id).slice(0, 249)]);
-        setStats((prev) => {
-          if (!prev) return null;
-          const isCrit = ['critical', 'high'].includes(a.severity);
-          return {
-            ...prev,
-            open_alerts_count: prev.open_alerts_count + 1,
-            critical_high_count: isCrit ? prev.critical_high_count + 1 : prev.critical_high_count
-          };
+        setAlerts((prev) => {
+          if (prev.some((item) => item.id === a.id)) return prev;
+          return [a, ...prev.slice(0, 249)];
         });
+        fetch('/api/monitoring-stats', { headers: { Authorization: `Bearer ${accessToken}` } })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success) setStats(d.data);
+          })
+          .catch(() => {});
       } catch (e) {
         console.error('SSE alert parse error:', e);
       }
@@ -341,7 +338,7 @@ export default function SecurityMonitoringPage() {
     return true;
   });
 
-  // --- 4 Prioritized Summary Metrics derived from actual MySQL records ---
+  // --- 7 Consistent Summary Metrics derived from actual backend records ---
   const openAlertsCount = stats?.open_alerts_count !== undefined
     ? stats.open_alerts_count
     : alerts.filter(a => a.status === 'open').length;
@@ -365,6 +362,10 @@ export default function SecurityMonitoringPage() {
   const sessionsAtRiskCount = stats?.sessions_at_risk_count !== undefined
     ? stats.sessions_at_risk_count
     : activeSessions.filter(s => (sessionRiskMap.get(s.id)?.score || 0) >= 40).length;
+
+  const totalSqlActivityCount = stats?.total_sql_activity_count !== undefined
+    ? stats.total_sql_activity_count
+    : 0;
 
   const activeSessionsCount = stats?.active_sessions_count !== undefined
     ? stats.active_sessions_count
@@ -569,15 +570,18 @@ export default function SecurityMonitoringPage() {
         </Alert>
       )}
 
-      {/* 4 Prioritized Summary Metrics */}
+      {/* 7 Enterprise Security Metrics derived strictly from database records */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
         {/* Metric 1: Open Security Alerts */}
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345' }}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345', borderRadius: 1.5 }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
-                Open Security Alerts
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
+                  Open Security Alerts
+                </Typography>
+                <BootstrapIcon name="bi-exclamation-triangle-fill" size={15} color={openAlertsCount > 0 ? '#EF4444' : '#10B981'} />
+              </Box>
               <Typography
                 variant="h5"
                 sx={{
@@ -589,7 +593,7 @@ export default function SecurityMonitoringPage() {
                 {isUnavailable ? '--' : openAlertsCount}
               </Typography>
               <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
-                {isUnavailable ? 'Backend unavailable' : openAlertsCount > 0 ? 'Requires administrative triage' : 'No active incident alerts'}
+                {isUnavailable ? 'Backend unavailable' : openAlertsCount > 0 ? 'Requires administrative review' : 'No active alerts'}
               </Typography>
             </CardContent>
           </Card>
@@ -597,11 +601,14 @@ export default function SecurityMonitoringPage() {
 
         {/* Metric 2: High / Critical Incidents */}
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345' }}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345', borderRadius: 1.5 }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
-                High / Critical Incidents
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
+                  High / Critical Incidents
+                </Typography>
+                <BootstrapIcon name="bi-shield-slash-fill" size={15} color={criticalHighCount > 0 ? '#EF4444' : '#10B981'} />
+              </Box>
               <Typography
                 variant="h5"
                 sx={{
@@ -621,23 +628,26 @@ export default function SecurityMonitoringPage() {
 
         {/* Metric 3: Total Policy Violations */}
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345' }}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345', borderRadius: 1.5 }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
-                Total Policy Violations
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
+                  Total Policy Violations
+                </Typography>
+                <BootstrapIcon name="bi-shield-x" size={15} color="#F59E0B" />
+              </Box>
               <Typography
                 variant="h5"
                 sx={{
                   fontWeight: 700,
-                  color: isUnavailable ? '#AAB8BC' : '#F59E0B',
+                  color: isUnavailable ? '#AAB8BC' : totalViolationsCount > 0 ? '#F59E0B' : '#AAB8BC',
                   mt: 0.5
                 }}
               >
                 {isUnavailable ? '--' : totalViolationsCount}
               </Typography>
               <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
-                {isUnavailable ? 'Backend unavailable' : `${blockedPreExecCount} blocked pre-exec | ${detectedPostHocCount} post-hoc`}
+                {isUnavailable ? 'Backend unavailable' : 'Persisted rule violations'}
               </Typography>
             </CardContent>
           </Card>
@@ -645,11 +655,14 @@ export default function SecurityMonitoringPage() {
 
         {/* Metric 4: Sessions at Risk */}
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345' }}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345', borderRadius: 1.5 }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
-                Sessions At Risk
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
+                  Sessions At Risk
+                </Typography>
+                <BootstrapIcon name="bi-key-fill" size={15} color={sessionsAtRiskCount > 0 ? '#EF4444' : '#10B981'} />
+              </Box>
               <Typography
                 variant="h5"
                 sx={{
@@ -661,7 +674,88 @@ export default function SecurityMonitoringPage() {
                 {isUnavailable ? '--' : sessionsAtRiskCount}
               </Typography>
               <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
-                {isUnavailable ? 'Backend unavailable' : `${activeSessionsCount} active ephemeral account${activeSessionsCount === 1 ? '' : 's'}`}
+                {isUnavailable ? 'Backend unavailable' : `${activeSessionsCount} active session${activeSessionsCount === 1 ? '' : 's'}`}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Metric 5: Total Recorded SQL Activity */}
+        <Grid item xs={12} sm={4} md={4}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345', borderRadius: 1.5 }}>
+            <CardContent sx={{ py: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
+                  Total Recorded SQL Activity
+                </Typography>
+                <BootstrapIcon name="bi-journal-text" size={15} color="#55E6C1" />
+              </Box>
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 700,
+                  color: isUnavailable ? '#AAB8BC' : '#55E6C1',
+                  mt: 0.5
+                }}
+              >
+                {isUnavailable ? '--' : totalSqlActivityCount}
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
+                {isUnavailable ? 'Backend unavailable' : 'Captured SQL telemetry statements'}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Metric 6: Pre-Execution Blocked Queries */}
+        <Grid item xs={12} sm={4} md={4}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345', borderRadius: 1.5 }}>
+            <CardContent sx={{ py: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
+                  Pre-Execution Blocked Queries
+                </Typography>
+                <BootstrapIcon name="bi-shield-lock-fill" size={15} color="#EF4444" />
+              </Box>
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 700,
+                  color: isUnavailable ? '#AAB8BC' : blockedPreExecCount > 0 ? '#EF4444' : '#AAB8BC',
+                  mt: 0.5
+                }}
+              >
+                {isUnavailable ? '--' : blockedPreExecCount}
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
+                {isUnavailable ? 'Backend unavailable' : 'Denied pre-execution before MySQL'}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Metric 7: Post-Execution Detections */}
+        <Grid item xs={12} sm={4} md={4}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345', borderRadius: 1.5 }}>
+            <CardContent sx={{ py: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
+                  Post-Execution Detections
+                </Typography>
+                <BootstrapIcon name="bi-activity" size={15} color="#F59E0B" />
+              </Box>
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 700,
+                  color: isUnavailable ? '#AAB8BC' : detectedPostHocCount > 0 ? '#F59E0B' : '#AAB8BC',
+                  mt: 0.5
+                }}
+              >
+                {isUnavailable ? '--' : detectedPostHocCount}
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
+                {isUnavailable ? 'Backend unavailable' : 'Audited behavioral detections'}
               </Typography>
             </CardContent>
           </Card>
