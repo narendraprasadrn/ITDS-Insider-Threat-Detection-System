@@ -23,6 +23,7 @@ test_allow_valid_query if {
     }
     res := query.result with input as input_doc
     res.allow == true
+    res.outcome == "ALLOW"
     count(res.violations) == 0
 }
 
@@ -45,6 +46,7 @@ test_violation_ungranted_operation if {
     }
     res := query.result with input as input_doc
     res.allow == false
+    res.outcome == "DENY"
     "OPERATION_NOT_GRANTED" in res.violations
 }
 
@@ -67,10 +69,11 @@ test_violation_table_out_of_scope if {
     }
     res := query.result with input as input_doc
     res.allow == false
+    res.outcome == "DENY"
     "TABLE_OUT_OF_SCOPE" in res.violations
 }
 
-# Test 4: Flag violation for unbounded SELECT *
+# Test 4: Flag violation for unbounded SELECT * (outcome: REVIEW)
 test_violation_unbounded_select_star if {
     input_doc := {
         "session": {
@@ -89,6 +92,8 @@ test_violation_unbounded_select_star if {
     }
     res := query.result with input as input_doc
     res.allow == false
+    res.outcome == "REVIEW"
+    res.authorized == true
     "UNBOUNDED_BULK_READ" in res.violations
 }
 
@@ -111,6 +116,7 @@ test_violation_session_expired if {
     }
     res := query.result with input as input_doc
     res.allow == false
+    res.outcome == "DENY"
     "SESSION_EXPIRED" in res.violations
 }
 
@@ -133,6 +139,7 @@ test_violation_unauthorized_ddl if {
     }
     res := query.result with input as input_doc
     res.allow == false
+    res.outcome == "DENY"
     "UNAUTHORIZED_DDL" in res.violations
 }
 
@@ -156,5 +163,54 @@ test_violation_cross_schema_access if {
     }
     res := query.result with input as input_doc
     res.allow == false
+    res.outcome == "DENY"
     "CROSS_SCHEMA_ACCESS" in res.violations
+}
+
+# Test 8: Allow unbounded read when session is exempt (Admin or DBA session)
+test_exempt_unbounded_read if {
+    input_doc := {
+        "session": {
+            "granted_operations": ["SELECT"],
+            "granted_resources": ["target_db.orders"],
+            "profile_name": "Admin Security Administration",
+            "is_expired": false
+        },
+        "query": {
+            "operation": "SELECT",
+            "tables": ["target_db.orders"],
+            "has_where": false,
+            "select_star": true,
+            "has_limit": false,
+            "is_ddl": false
+        }
+    }
+    res := query.result with input as input_doc
+    res.allow == true
+    res.outcome == "ALLOW"
+    count(res.violations) == 0
+}
+
+# Test 9: Deny unbounded bulk read on critical data (UNBOUNDED_BULK_READ with severity critical)
+test_deny_unbounded_critical_read if {
+    input_doc := {
+        "session": {
+            "granted_operations": ["SELECT"],
+            "granted_resources": ["target_db.payroll"],
+            "profile_name": "Executive Payroll & Compensation",
+            "is_expired": false
+        },
+        "query": {
+            "operation": "SELECT",
+            "tables": ["target_db.payroll"],
+            "has_where": false,
+            "select_star": true,
+            "has_limit": false,
+            "is_ddl": false
+        }
+    }
+    res := query.result with input as input_doc
+    res.allow == false
+    res.outcome == "DENY"
+    "UNBOUNDED_BULK_READ" in res.violations
 }

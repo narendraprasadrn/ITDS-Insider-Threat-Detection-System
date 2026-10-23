@@ -71,12 +71,12 @@ export const riskController = {
       const { id } = req.params;
       const { status, notes } = req.body;
 
-      if (!['open', 'investigating', 'closed'].includes(status)) {
+      if (!['open', 'investigating', 'closed', 'resolved'].includes(status)) {
         return res.status(400).json({
           success: false,
           error: {
             code: 'INVALID_STATUS',
-            message: 'Status must be one of: open, investigating, closed'
+            message: 'Status must be one of: open, investigating, closed, resolved'
           }
         });
       }
@@ -99,6 +99,18 @@ export const riskController = {
           status,
           notes
         }
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getMonitoringStats(req, res, next) {
+    try {
+      const stats = await riskEngineService.getMonitoringStats();
+      res.status(200).json({
+        success: true,
+        data: stats
       });
     } catch (err) {
       next(err);

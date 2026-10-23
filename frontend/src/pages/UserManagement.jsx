@@ -28,11 +28,7 @@ import {
   MenuItem,
   OutlinedInput
 } from '@mui/material';
-import PersonAddIcon from '@mui/icons-material/PersonAdd';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import EditIcon from '@mui/icons-material/Edit';
-import BlockIcon from '@mui/icons-material/Block';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const ALL_ROLES = ['admin', 'dba', 'developer'];
@@ -129,8 +125,8 @@ export default function UserManagement() {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700 }}>
-            User & Role Management (RBAC)
+          <Typography variant="h5" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <BootstrapIcon name="bi-people-fill" size={24} color="#55E6C1" /> User & Role Management (RBAC)
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Admin console for user accounts, role mappings, and account status controls.
@@ -138,7 +134,7 @@ export default function UserManagement() {
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
           <Button
-            startIcon={<RefreshIcon />}
+            startIcon={<BootstrapIcon name="bi-arrow-clockwise" size={15} />}
             variant="outlined"
             size="small"
             onClick={fetchUsers}
@@ -147,7 +143,7 @@ export default function UserManagement() {
             Refresh
           </Button>
           <Button
-            startIcon={<PersonAddIcon />}
+            startIcon={<BootstrapIcon name="bi-person-plus-fill" size={15} />}
             variant="contained"
             size="small"
             onClick={() => setOpenDialog(true)}
@@ -163,7 +159,7 @@ export default function UserManagement() {
         <CardContent sx={{ p: 0 }}>
           <TableContainer component={Paper} variant="outlined" sx={{ border: 'none' }}>
             <Table>
-              <TableHead sx={{ backgroundColor: 'rgba(255, 255, 255, 0.04)' }}>
+              <TableHead sx={{ backgroundColor: '#1F292B', borderBottom: '1px solid #364345' }}>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>ID</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Username</TableCell>
@@ -212,7 +208,7 @@ export default function UserManagement() {
                           size="small"
                           label={u.is_active ? 'Active' : 'Disabled'}
                           color={u.is_active ? 'success' : 'default'}
-                          icon={u.is_active ? <CheckCircleIcon /> : <BlockIcon />}
+                          icon={u.is_active ? <BootstrapIcon name="bi-check-circle-fill" size={12} /> : <BootstrapIcon name="bi-slash-circle" size={12} />}
                         />
                       </TableCell>
                       <TableCell align="right">
@@ -221,8 +217,9 @@ export default function UserManagement() {
                           color={u.is_active ? 'warning' : 'success'}
                           onClick={() => handleToggleStatus(u)}
                           title={u.is_active ? 'Deactivate User' : 'Activate User'}
+                          aria-label={u.is_active ? 'Deactivate User' : 'Activate User'}
                         >
-                          <BlockIcon fontSize="small" />
+                          <BootstrapIcon name={u.is_active ? "bi-slash-circle" : "bi-check-circle"} size={15} />
                         </IconButton>
                       </TableCell>
                     </TableRow>
@@ -237,7 +234,9 @@ export default function UserManagement() {
       {/* Create User Dialog */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
         <form onSubmit={handleCreateUser}>
-          <DialogTitle>Provision New ITDS User</DialogTitle>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <BootstrapIcon name="bi-person-plus-fill" size={20} color="#55E6C1" /> Provision New ITDS User
+          </DialogTitle>
           <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
             <TextField
               label="Username"

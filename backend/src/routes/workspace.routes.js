@@ -11,4 +11,7 @@ router.post('/execute', authenticate, workspaceController.executeQuery);
 // Query history for a session
 router.get('/history/:sessionId', authenticate, workspaceController.getSessionHistory);
 
+// Policy violations for a session (scoped to session owner or elevated admin/dba)
+router.get('/violations/:sessionId', authenticate, workspaceController.getSessionViolations);
+
 export default router;

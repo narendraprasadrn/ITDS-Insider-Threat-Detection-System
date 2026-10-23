@@ -14,16 +14,16 @@ export const accessRequestService = {
    * - DENIED (if OPA or RBAC denies)
    */
   async createRequest({ user, profileId, requestedDurationMinutes, justification, req = null }) {
-    if (!profileId || !justification) {
-      throw new AppError('Profile ID and business justification are required', 400, 'BAD_REQUEST');
+    if (!profileId) {
+      throw new AppError('Profile ID is required', 400, 'BAD_REQUEST');
     }
 
     // 1. Fetch profile details
     const profile = await profileService.getProfile(profileId);
 
-    // 2. Validate user role permissions against profile
+    // 2. Validate user role permissions against profile strictly (server-enforced)
     const permittedRoleNames = profile.roles.map(r => r.name);
-    const userHasPermittedRole = user.roles.some(r => permittedRoleNames.includes(r) || r === 'admin');
+    const userHasPermittedRole = user.roles.some(r => permittedRoleNames.includes(r));
 
     if (!userHasPermittedRole) {
       throw new AppError(
@@ -33,7 +33,23 @@ export const accessRequestService = {
       );
     }
 
-    const duration = requestedDurationMinutes || profile.max_duration_minutes || 60;
+    const isApprovalRequired = Boolean(profile.requires_approval);
+
+    // Business justification is mandatory ONLY for profiles requiring approval
+    if (isApprovalRequired && (!justification || !justification.trim())) {
+      throw new AppError('Business justification is required for profiles requiring independent approval', 400, 'JUSTIFICATION_REQUIRED');
+    }
+
+    const finalJustification = (justification && justification.trim())
+      ? justification.trim()
+      : `Routine authorized access under profile '${profile.name}'`;
+
+    // Clamp duration within profile's max limit
+    const maxPermitted = profile.max_duration_minutes || 60;
+    const duration = Math.min(
+      Math.max(Number(requestedDurationMinutes) || maxPermitted, 15),
+      maxPermitted
+    );
 
     // 3. Determine highest sensitivity rating
     const sensitivityRank = { low: 1, medium: 2, high: 3, critical: 4 };
@@ -58,7 +74,7 @@ export const accessRequestService = {
       profile: {
         id: profile.id,
         name: profile.name,
-        requires_approval: profile.requires_approval
+        requires_approval: isApprovalRequired
       },
       resources: profile.resources.map(r => ({
         db_name: r.db_name,
@@ -95,7 +111,7 @@ export const accessRequestService = {
         user.id,
         profile.id,
         duration,
-        justification,
+        finalJustification,
         initialStatus === 'active' ? 'approved' : initialStatus,
         decision.action,
         JSON.stringify(decision.reasons || []),
@@ -108,11 +124,11 @@ export const accessRequestService = {
 
     // Audit log request submission
     await auditService.log({
-      eventType: 'ACCESS_REQUEST_SUBMITTED',
+      eventType: initialStatus === 'active' ? 'ACCESS_REQUEST_ACTIVATED' : 'ACCESS_REQUEST_SUBMITTED',
       userId: user.id,
       username: user.username,
       status: initialStatus === 'denied' ? 'WARNING' : 'SUCCESS',
-      details: { requestId, profileName: profile.name, decisionAction: decision.action },
+      details: { requestId, profileName: profile.name, decisionAction: decision.action, autoActivated: initialStatus === 'active' },
       req
     });
 
@@ -141,7 +157,7 @@ export const accessRequestService = {
       );
 
       return {
-        status: 'approved',
+        status: 'active',
         session_status: 'active',
         requestId,
         sessionId: sessionResult.sessionId,
@@ -150,13 +166,27 @@ export const accessRequestService = {
       };
     }
 
+    // 8. If pending, check whether independent approvers exist in the system (other than requester)
+    const [otherApprovers] = await pool.query(
+      `SELECT count(DISTINCT u.id) as count
+       FROM users u
+       JOIN user_roles ur ON u.id = ur.user_id
+       JOIN roles r ON ur.role_id = r.id
+       WHERE r.name IN ('admin', 'dba') AND u.id != ? AND u.is_active = 1`,
+      [user.id]
+    );
+    const hasIndependentApprover = Number(otherApprovers[0]?.count || 0) > 0;
+
     // If pending or denied
     return {
       status: initialStatus,
       requestId,
       decision,
+      has_independent_approver: hasIndependentApprover,
       message: initialStatus === 'pending'
-        ? 'Request submitted to administrator approval queue.'
+        ? (hasIndependentApprover
+            ? 'Request submitted to independent administrator approval queue.'
+            : 'Request submitted, but no independent approver is currently configured in the system.')
         : `Request denied by policy: ${decision.reasons?.join(', ')}`
     };
   },
@@ -176,9 +206,13 @@ export const accessRequestService = {
              ar.requested_operations, ar.requested_resources,
              ar.created_at, ar.updated_at,
              u.username, u.full_name, u.email,
-             p.name AS profile_name, p.risk_level, p.allowed_operations,
+             p.name AS profile_name, p.risk_level, p.allowed_operations, p.requires_approval,
              approver.username AS approved_by_username,
-             ds.mysql_username, ds.status AS session_status
+             ds.mysql_username, ds.status AS session_status,
+             (SELECT count(DISTINCT u2.id) FROM users u2
+              JOIN user_roles ur2 ON u2.id = ur2.user_id
+              JOIN roles r2 ON ur2.role_id = r2.id
+              WHERE r2.name IN ('admin', 'dba') AND u2.id != ar.user_id AND u2.is_active = 1) AS independent_approver_count
       FROM access_requests ar
       JOIN users u ON ar.user_id = u.id
       JOIN access_profiles p ON ar.profile_id = p.id
@@ -267,7 +301,11 @@ export const accessRequestService = {
               ar.requested_operations, ar.requested_resources,
               ar.created_at,
               u.username, u.full_name, u.email,
-              p.name AS profile_name, p.risk_level, p.allowed_operations
+              p.name AS profile_name, p.risk_level, p.allowed_operations, p.requires_approval,
+              (SELECT count(DISTINCT u2.id) FROM users u2
+               JOIN user_roles ur2 ON u2.id = ur2.user_id
+               JOIN roles r2 ON ur2.role_id = r2.id
+               WHERE r2.name IN ('admin', 'dba') AND u2.id != ar.user_id AND u2.is_active = 1) AS independent_approver_count
        FROM access_requests ar
        JOIN users u ON ar.user_id = u.id
        JOIN access_profiles p ON ar.profile_id = p.id
@@ -301,6 +339,15 @@ export const accessRequestService = {
     const accessReq = reqRows[0];
     if (accessReq.status !== 'pending') {
       throw new AppError(`Cannot approve request with status '${accessReq.status}'`, 400, 'BAD_REQUEST');
+    }
+
+    // Enforce separation of duties: prevent self-approval on approval-mandated requests
+    if (accessReq.user_id === decidingUser.id) {
+      throw new AppError(
+        'Self-approval is strictly prohibited. Requests requiring independent review must be approved by another administrator or DBA.',
+        403,
+        'FORBIDDEN_SELF_APPROVAL'
+      );
     }
 
     // 1. Fetch profile and provision session

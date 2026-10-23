@@ -186,49 +186,62 @@ class RiskEngineService {
    * Deduplicate and generate alerts for high-risk sessions
    */
   async handleAlertGeneration(session, score, riskLevel, breakdown) {
-    // Check if an open or investigating alert already exists for this session
-    const [existingAlerts] = await pool.query(
-      `SELECT id, status FROM alerts
-       WHERE session_id = ? AND status IN ('open', 'investigating')
-       LIMIT 1`,
-      [session.id]
-    );
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
 
-    if (existingAlerts.length > 0) {
-      // Alert already exists and is active; update current score and evidence
-      await pool.query(
-        `UPDATE alerts SET risk_score = ?, severity = ?, evidence = ? WHERE id = ?`,
-        [score, riskLevel, JSON.stringify(breakdown), existingAlerts[0].id]
+      // Check if an open or investigating alert already exists for this session with row-lock
+      const [existingAlerts] = await conn.query(
+        `SELECT id, status FROM alerts
+         WHERE session_id = ? AND status IN ('open', 'investigating')
+         LIMIT 1 FOR UPDATE`,
+        [session.id]
       );
-      return;
+
+      if (existingAlerts.length > 0) {
+        // Alert already exists and is active; update current score and evidence
+        await conn.query(
+          `UPDATE alerts SET risk_score = ?, severity = ?, evidence = ? WHERE id = ?`,
+          [score, riskLevel, JSON.stringify(breakdown), existingAlerts[0].id]
+        );
+        await conn.commit();
+        return;
+      }
+
+      // Build alert title & description from fired detector explanations
+      const rulesFired = breakdown.map(b => b.rule_id).join(', ');
+      const title = `Insider Threat Risk Spike on Session #${session.id} (${riskLevel.toUpperCase()} - Score: ${score})`;
+      const description = `Detectors triggered: [${rulesFired}]. Total calculated risk score reached ${score}/100. Immediate analyst review recommended.`;
+
+      const [alertRes] = await conn.query(
+        `INSERT INTO alerts (session_id, user_id, risk_score, title, description, status, severity, evidence)
+         VALUES (?, ?, ?, ?, ?, 'open', ?, ?)`,
+        [session.id, session.user_id, score, title, description, riskLevel, JSON.stringify(breakdown)]
+      );
+
+      await conn.commit();
+
+      const alertPayload = {
+        id: alertRes.insertId,
+        session_id: session.id,
+        user_id: session.user_id,
+        risk_score: score,
+        title,
+        description,
+        status: 'open',
+        severity: riskLevel,
+        evidence: breakdown,
+        created_at: new Date()
+      };
+
+      logger.warn({ alertId: alertRes.insertId, sessionId: session.id, score }, 'Security Alert generated');
+      this.emitAlert(alertPayload);
+    } catch (err) {
+      await conn.rollback();
+      logger.error({ err, sessionId: session.id }, 'Error during alert generation');
+    } finally {
+      conn.release();
     }
-
-    // Build alert title & description from fired detector explanations
-    const rulesFired = breakdown.map(b => b.rule_id).join(', ');
-    const title = `Insider Threat Risk Spike on Session #${session.id} (${riskLevel.toUpperCase()} - Score: ${score})`;
-    const description = `Detectors triggered: [${rulesFired}]. Total calculated risk score reached ${score}/100. Immediate analyst review recommended.`;
-
-    const [alertRes] = await pool.query(
-      `INSERT INTO alerts (session_id, user_id, risk_score, title, description, status, severity, evidence)
-       VALUES (?, ?, ?, ?, ?, 'open', ?, ?)`,
-      [session.id, session.user_id, score, title, description, riskLevel, JSON.stringify(breakdown)]
-    );
-
-    const alertPayload = {
-      id: alertRes.insertId,
-      session_id: session.id,
-      user_id: session.user_id,
-      risk_score: score,
-      title,
-      description,
-      status: 'open',
-      severity: riskLevel,
-      evidence: breakdown,
-      created_at: new Date()
-    };
-
-    logger.warn({ alertId: alertRes.insertId, sessionId: session.id, score }, 'Security Alert generated');
-    this.emitAlert(alertPayload);
   }
 
   /**
@@ -241,9 +254,9 @@ class RiskEngineService {
              u.username, u.full_name,
              p.name AS profile_name
       FROM session_risk_scores srs
-      INNER JOIN db_sessions ds ON srs.session_id = ds.id
-      INNER JOIN users u ON srs.user_id = u.id
-      INNER JOIN access_profiles p ON ds.profile_id = p.id
+      LEFT JOIN db_sessions ds ON srs.session_id = ds.id
+      LEFT JOIN users u ON srs.user_id = u.id
+      LEFT JOIN access_profiles p ON ds.profile_id = p.id
       WHERE 1=1
     `;
     const params = [];
@@ -282,9 +295,9 @@ class RiskEngineService {
              u.username, u.full_name,
              p.name AS profile_name
       FROM alerts a
-      INNER JOIN users u ON a.user_id = u.id
-      INNER JOIN db_sessions ds ON a.session_id = ds.id
-      INNER JOIN access_profiles p ON ds.profile_id = p.id
+      LEFT JOIN users u ON a.user_id = u.id
+      LEFT JOIN db_sessions ds ON a.session_id = ds.id
+      LEFT JOIN access_profiles p ON ds.profile_id = p.id
       WHERE 1=1
     `;
     const params = [];
@@ -321,8 +334,9 @@ class RiskEngineService {
    * Update alert lifecycle status
    */
   async updateAlertStatus(alertId, status, notes = null) {
+    const normalizedStatus = status === 'resolved' ? 'closed' : status;
     let sql = `UPDATE alerts SET status = ?`;
-    const params = [status];
+    const params = [normalizedStatus];
 
     if (notes !== null) {
       sql += `, analyst_notes = ?`;
@@ -334,6 +348,68 @@ class RiskEngineService {
 
     const [res] = await pool.query(sql, params);
     return res.affectedRows > 0;
+  }
+
+  /**
+   * Directly derive live security monitoring metrics from persisted MySQL records
+   */
+  async getMonitoringStats() {
+    const [[openAlertsRow]] = await pool.query(
+      `SELECT count(*) as count FROM alerts WHERE status = 'open'`
+    );
+    const [[critAlertsRow]] = await pool.query(
+      `SELECT count(*) as count FROM alerts WHERE status = 'open' AND severity IN ('critical', 'high')`
+    );
+    const [[critViolsRow]] = await pool.query(
+      `SELECT count(*) as count FROM policy_violations WHERE severity IN ('critical', 'high')`
+    );
+    const [[violsRow]] = await pool.query(`
+      SELECT 
+        count(*) as total,
+        sum(CASE WHEN enforcement_type IN ('blocked_pre_execution', 'blocked_by_db') THEN 1 ELSE 0 END) as blocked_pre_exec,
+        sum(CASE WHEN enforcement_type = 'detected_post_hoc' THEN 1 ELSE 0 END) as detected_post_hoc
+      FROM policy_violations
+    `);
+    const [[sessionsRow]] = await pool.query(`
+      SELECT 
+        count(*) as total_sessions,
+        sum(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_sessions
+      FROM db_sessions
+    `);
+    const [[atRiskRow]] = await pool.query(`
+      SELECT count(DISTINCT ds.id) as count
+      FROM db_sessions ds
+      JOIN session_risk_scores srs ON ds.id = srs.session_id
+      WHERE ds.status = 'active' AND srs.score >= 40
+    `);
+    const [[allAtRiskRow]] = await pool.query(`
+      SELECT count(DISTINCT session_id) as count
+      FROM session_risk_scores
+      WHERE score >= 40
+    `);
+
+    const openAlertsCount = Number(openAlertsRow?.count || 0);
+    const critAlertsCount = Number(critAlertsRow?.count || 0);
+    const critViolsCount = Number(critViolsRow?.count || 0);
+    const totalViolationsCount = Number(violsRow?.total || 0);
+    const blockedPreExecCount = Number(violsRow?.blocked_pre_exec || 0);
+    const detectedPostHocCount = Number(violsRow?.detected_post_hoc || 0);
+    const activeSessionsCount = Number(sessionsRow?.active_sessions || 0);
+    const totalSessionsCount = Number(sessionsRow?.total_sessions || 0);
+    const sessionsAtRiskCount = Number(atRiskRow?.count || 0);
+    const allSessionsAtRiskCount = Number(allAtRiskRow?.count || 0);
+
+    return {
+      open_alerts_count: openAlertsCount,
+      critical_high_count: critAlertsCount + critViolsCount,
+      total_violations_count: totalViolationsCount,
+      blocked_pre_exec_count: blockedPreExecCount,
+      detected_post_hoc_count: detectedPostHocCount,
+      sessions_at_risk_count: sessionsAtRiskCount,
+      all_sessions_at_risk_count: allSessionsAtRiskCount,
+      active_sessions_count: activeSessionsCount,
+      total_sessions_count: totalSessionsCount
+    };
   }
 }
 

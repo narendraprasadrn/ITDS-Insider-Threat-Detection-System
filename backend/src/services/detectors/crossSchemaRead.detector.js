@@ -25,7 +25,7 @@ export function detectCrossSchemaRead(events, baseline, context = {}) {
     const uniqueSchemas = [...new Set(schemas)];
     // Multi-schema query or query targeting system schemas
     if (uniqueSchemas.length > 1) return true;
-    if (uniqueSchemas.some(s => ['mysql', 'information_schema', 'performance_schema', 'sys', 'itds_app'].includes(s))) {
+    if (uniqueSchemas.some(s => ['mysql', 'information_schema', 'performance_schema', 'sys'].includes(s))) {
       return true;
     }
 

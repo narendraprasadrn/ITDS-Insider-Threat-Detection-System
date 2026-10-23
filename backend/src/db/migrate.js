@@ -43,9 +43,9 @@ async function runMigrations() {
   }
 
   try {
-    // Ensure itds_app exists
-    await connection.query('CREATE DATABASE IF NOT EXISTS `itds_app`');
-    await connection.query('USE `itds_app`');
+    // Ensure database exists
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${env.DB.NAME}\``);
+    await connection.query(`USE \`${env.DB.NAME}\``);
 
     // Create migrations table if not exists
     await connection.query(`
@@ -73,7 +73,7 @@ async function runMigrations() {
       await connection.query(sql);
 
       // Record migration
-      await connection.query('INSERT INTO `itds_app`.`_migrations` (name) VALUES (?)', [file]);
+      await connection.query(`INSERT INTO \`${env.DB.NAME}\`.\`_migrations\` (name) VALUES (?)`, [file]);
       logger.info({ file }, 'Migration completed successfully');
     }
 

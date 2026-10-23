@@ -1,3 +1,39 @@
+/* frontend/src/index.css - Professional Enterprise Cybersecurity Design System */
+:root {
+  /* Core Palette Tokens - ITDS Enterprise Spec */
+  --color-bg-main: #171B1C;
+  --color-surface-header: #1F292B;
+  --color-surface-sidebar: #1F292B;
+  --color-surface-card: #252E30;
+  --color-surface-elevated: #283335;
+  --color-surface-input: #171B1C;
+  --color-nav-selected: #243D37;
+  
+  /* Primary Accent: Mint */
+  --color-accent-mint: #55E6C1;
+  --color-accent-mint-hover: #7AF0D3;
+  --color-accent-mint-glow: rgba(85, 230, 193, 0.18);
+  --color-accent-contrast: #0C1E1B;
+
+  /* Typography & Neutral Content */
+  --color-text-primary: #F5F7F7;
+  --color-text-secondary: #AAB8BC;
+  --color-text-muted: #64748B;
+  --color-border: #364345;
+  --color-border-subtle: rgba(54, 67, 69, 0.7);
+  --color-border-focused: #55E6C1;
+
+  /* Semantic Status Colors */
+  --color-status-success: #10B981;
+  --color-status-success-bg: rgba(16, 185, 129, 0.12);
+  --color-status-warning: #F59E0B;
+  --color-status-warning-bg: rgba(245, 158, 11, 0.12);
+  --color-status-danger: #EF4444;
+  --color-status-danger-bg: rgba(239, 68, 68, 0.12);
+  --color-status-info: #38BDF8;
+  --color-status-info-bg: rgba(56, 189, 248, 0.12);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -6,13 +42,45 @@
 
 body {
   margin: 0;
-  background-color: #0a0f1d;
-  color: #f1f5f9;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--color-bg-main);
+  color: var(--color-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-code {
-  font-family: 'JetBrains Mono', source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-main);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Monospace code blocks */
+code, pre {
+  font-family: 'JetBrains Mono', 'Fira Code', source-code-pro, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Selection */
+::selection {
+  background-color: var(--color-accent-mint-glow);
+  color: var(--color-accent-mint);
+}
+
+/* Global focus outline */
+:focus-visible {
+  outline: 2px solid var(--color-accent-mint);
+  outline-offset: 2px;
 }

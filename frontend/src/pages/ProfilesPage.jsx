@@ -3,14 +3,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
-  Grid,
-  Card,
-  CardContent,
-  CardHeader,
-  Chip,
-  Button,
-  Tabs,
-  Tab,
   Table,
   TableBody,
   TableCell,
@@ -18,8 +10,14 @@ import {
   TableHead,
   TableRow,
   Paper,
+  Card,
+  Chip,
+  Button,
+  Tabs,
+  Tab,
   Alert,
   CircularProgress,
+  Stack,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -29,17 +27,9 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  OutlinedInput,
-  Divider,
-  Stack
+  OutlinedInput
 } from '@mui/material';
-import StorageIcon from '@mui/icons-material/Storage';
-import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
-import AddCircleIcon from '@mui/icons-material/AddCircle';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import ScheduleIcon from '@mui/icons-material/Schedule';
-import SecurityIcon from '@mui/icons-material/Security';
-import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const ALL_OPERATIONS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'DDL'];
@@ -55,7 +45,7 @@ export default function ProfilesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Create Profile Dialog
+  // Admin: Create Profile Dialog
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: '',
@@ -74,16 +64,18 @@ export default function ProfilesPage() {
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch available profiles for current user's role
+      // 1. Fetch available profiles for current user's role (governed by RBAC)
       const availRes = await fetch('/api/profiles/available', {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const availData = await availRes.json();
       if (availRes.ok && availData.success) {
-        setAvailableProfiles(availData.data.profiles);
+        setAvailableProfiles(availData.data.profiles || []);
+      } else {
+        setError(availData.error?.message || 'Failed to load access profiles');
       }
 
-      // If admin, fetch all profiles and resources catalog
+      // 2. If administrator, also fetch all system profiles and resources catalog
       if (isAdmin) {
         const [allProfRes, resRes] = await Promise.all([
           fetch('/api/profiles', { headers: { Authorization: `Bearer ${accessToken}` } }),
@@ -92,8 +84,8 @@ export default function ProfilesPage() {
         const allProfData = await allProfRes.json();
         const resData = await resRes.json();
 
-        if (allProfRes.ok && allProfData.success) setAllProfiles(allProfData.data.profiles);
-        if (resRes.ok && resData.success) setResources(resData.data.resources);
+        if (allProfRes.ok && allProfData.success) setAllProfiles(allProfData.data.profiles || []);
+        if (resRes.ok && resData.success) setResources(resData.data.resources || []);
       }
     } catch {
       setError('Network error while loading profiles data');
@@ -145,29 +137,35 @@ export default function ProfilesPage() {
     }
   };
 
-  const getSensitivityColor = (level) => {
-    switch (level) {
-      case 'critical': return 'error';
-      case 'high': return 'warning';
-      case 'medium': return 'info';
-      default: return 'success';
+  // Helper to group resources by database name
+  const groupResourcesByDb = (resList = []) => {
+    const map = {};
+    for (const r of resList) {
+      const db = r.db_name || 'FinanceCorpDB';
+      if (!map[db]) map[db] = [];
+      map[db].push(r.table_name);
     }
+    return map;
   };
+
+  // Determine which list to display based on tab
+  const displayedProfiles = (isAdmin && currentTab === 1) ? allProfiles : availableProfiles;
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700 }}>
-            Access Profiles & Resources Catalog
+          <Typography variant="h4" sx={{ fontWeight: 700, color: '#F5F7F7', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <BootstrapIcon name="bi-database-lock" size={24} color="#55E6C1" /> Access Profiles
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Role-governed database access profiles with least-privilege operations and sensitivity ratings.
+          <Typography variant="body2" sx={{ color: '#AAB8BC', mt: 0.5 }}>
+            Least-privilege database permissions and accessible table scopes by role.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
           <Button
-            startIcon={<RefreshIcon />}
+            startIcon={<BootstrapIcon name="bi-arrow-clockwise" size={15} />}
             variant="outlined"
             size="small"
             onClick={fetchData}
@@ -177,7 +175,7 @@ export default function ProfilesPage() {
           </Button>
           {isAdmin && currentTab === 1 && (
             <Button
-              startIcon={<AddCircleIcon />}
+              startIcon={<BootstrapIcon name="bi-plus-circle" size={15} />}
               variant="contained"
               size="small"
               onClick={() => setOpenCreateDialog(true)}
@@ -188,310 +186,232 @@ export default function ProfilesPage() {
         </Box>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
+      {/* Admin Tab Switching */}
       {isAdmin && (
         <Tabs
           value={currentTab}
           onChange={(e, val) => setCurrentTab(val)}
-          sx={{ mb: 3, borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}
+          sx={{ mb: 2, minHeight: 40, borderBottom: '1px solid #364345' }}
         >
-          <Tab label={`My Available Profiles (${availableProfiles.length})`} />
-          <Tab label={`All System Profiles (${allProfiles.length})`} />
-          <Tab label={`Protected Resources Catalog (${resources.length})`} />
+          <Tab label={`Authorized Profiles (${availableProfiles.length})`} sx={{ minHeight: 40, py: 1 }} />
+          <Tab label={`All System Profiles (${allProfiles.length})`} sx={{ minHeight: 40, py: 1 }} />
+          <Tab label={`Resources Catalog (${resources.length})`} sx={{ minHeight: 40, py: 1 }} />
         </Tabs>
       )}
 
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <CircularProgress size={32} />
         </Box>
+      ) : (currentTab === 2 && isAdmin) ? (
+        /* TAB 2: Resources Catalog (Admin only) */
+        <Card variant="outlined" sx={{ borderRadius: 1.5, borderColor: '#364345', bgcolor: '#252E30' }}>
+          <TableContainer component={Paper} elevation={0} sx={{ maxHeight: 600 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow sx={{ '& th': { bgcolor: '#1F292B', fontWeight: 700, fontSize: '0.78rem', borderBottom: '1px solid #364345', color: '#AAB8BC' } }}>
+                  <TableCell width="80">ID</TableCell>
+                  <TableCell width="200">Database</TableCell>
+                  <TableCell width="220">Table Name</TableCell>
+                  <TableCell>Description</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {resources.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                      No resources registered in the catalog.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  resources.map((r) => (
+                    <TableRow key={r.id} hover>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>#{r.id}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#A6ADB4' }}>{r.db_name}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#55E6C1' }}>
+                        {r.table_name}
+                      </TableCell>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.85rem' }}>
+                        {r.description || 'Enterprise business table'}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Card>
       ) : (
-        <>
-          {/* TAB 0: Available Profiles for Current User */}
-          {(currentTab === 0 || !isAdmin) && (
-            <Box>
-              <Alert severity="info" sx={{ mb: 3, backgroundColor: 'rgba(2, 136, 209, 0.08)' }}>
-                You are authenticated as <strong>{user?.username}</strong> with roles: <strong>[{user?.roles?.join(', ')}]</strong>.
-                Below are the reusable profiles your role is permitted to request under JIT governance.
-              </Alert>
+        /* PROFILES TABLE (Compact, Responsive, Focused on Database & Tables) */
+        <Card variant="outlined" sx={{ borderRadius: 1.5, borderColor: '#343F3D', bgcolor: '#252D30' }}>
+          <TableContainer component={Paper} elevation={0} sx={{ overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 650 }}>
+              <TableHead>
+                <TableRow sx={{ '& th': { bgcolor: '#1F292B', fontWeight: 700, fontSize: '0.78rem', py: 1.25, borderBottom: '1px solid #364345', color: '#AAB8BC' } }}>
+                  <TableCell width="28%">Profile / Role</TableCell>
+                  <TableCell width="18%">Database</TableCell>
+                  <TableCell width="34%">Accessible Tables</TableCell>
+                  <TableCell width="20%">Allowed Operations</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {displayedProfiles.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center" sx={{ py: 6, color: 'text.secondary' }}>
+                      <BootstrapIcon name="bi-database-lock" size={32} color="#AAB8BC" sx={{ opacity: 0.35, mb: 1, display: 'block', mx: 'auto' }} />
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#F5F7F7' }}>
+                        No Access Profiles Available
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
+                        There are currently no access profiles available for your role.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  displayedProfiles.map((p) => {
+                    const dbGroups = groupResourcesByDb(p.resources);
+                    const dbNames = Object.keys(dbGroups);
 
-              <Grid container spacing={3}>
-                {availableProfiles.map((p) => (
-                  <Grid item xs={12} md={6} key={p.id}>
-                    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                      <CardHeader
-                        avatar={<VerifiedUserIcon color="primary" />}
-                        title={p.name}
-                        titleTypographyProps={{ fontWeight: 700, fontSize: '1.05rem' }}
-                        subheader={
-                          <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
-                            <Chip
-                              size="small"
-                              label={`Risk: ${p.risk_level.toUpperCase()}`}
-                              color={getSensitivityColor(p.risk_level)}
-                            />
-                            <Chip
-                              size="small"
-                              label={p.requires_approval ? 'Approval Required' : 'Auto-Approve'}
-                              color={p.requires_approval ? 'warning' : 'success'}
-                              variant="outlined"
-                            />
-                          </Box>
-                        }
-                      />
-                      <CardContent sx={{ flexGrow: 1 }}>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                          {p.description}
-                        </Typography>
-
-                        <Divider sx={{ my: 1.5 }} />
-
-                        <Box sx={{ mb: 1.5 }}>
-                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600 }}>
-                            ALLOWED SQL OPERATIONS
+                    return (
+                      <TableRow key={p.id} hover sx={{ '& td': { py: 1.25, borderBottom: '1px solid #364345' } }}>
+                        {/* 1. Profile / Role */}
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontWeight: 600, color: '#F5F7F7', lineHeight: 1.3 }}>
+                            {p.name}
                           </Typography>
-                          <Stack direction="row" spacing={0.5} flexWrap="wrap">
-                            {p.allowed_operations.map((op) => (
-                              <Chip
-                                key={op}
-                                label={op}
-                                size="small"
-                                sx={{
-                                  backgroundColor: op === 'DDL' ? 'error.dark' : op === 'DELETE' ? 'warning.dark' : 'primary.dark',
-                                  color: '#fff',
-                                  fontWeight: 600
-                                }}
-                              />
-                            ))}
-                          </Stack>
-                        </Box>
-
-                        <Box sx={{ mb: 1.5 }}>
-                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600 }}>
-                            TARGET DB RESOURCES
-                          </Typography>
-                          <Stack direction="row" spacing={0.5} flexWrap="wrap">
-                            {p.resources.map((r) => (
-                              <Chip
-                                key={r.id}
-                                label={`${r.db_name}.${r.table_name}`}
-                                size="small"
-                                variant="outlined"
-                                color={getSensitivityColor(r.sensitivity)}
-                              />
-                            ))}
-                          </Stack>
-                        </Box>
-
-                        <Box sx={{ display: 'flex', gap: 3, mt: 2, pt: 1, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <ScheduleIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-                            <Typography variant="caption" color="text.secondary">
-                              Max Duration: <strong>{p.max_duration_minutes} min</strong>
+                          {p.roles && p.roles.length > 0 && (
+                            <Typography variant="caption" sx={{ color: '#AAB8BC', display: 'block', mt: 0.25, fontSize: '0.72rem' }}>
+                              Role: {p.roles.map(r => r.name?.toUpperCase()).join(', ')}
                             </Typography>
-                          </Box>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <StorageIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-                            <Typography variant="caption" color="text.secondary">
-                              Max Rows: <strong>{p.max_rows_hint || 'Unlimited'}</strong>
-                            </Typography>
-                          </Box>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                ))}
-              </Grid>
-            </Box>
-          )}
+                          )}
+                        </TableCell>
 
-          {/* TAB 1: Admin All Profiles */}
-          {isAdmin && currentTab === 1 && (
-            <Card>
-              <TableContainer component={Paper} variant="outlined" sx={{ border: 'none' }}>
-                <Table>
-                  <TableHead sx={{ backgroundColor: 'rgba(255, 255, 255, 0.04)' }}>
-                    <TableRow>
-                      <TableCell sx={{ fontWeight: 600 }}>ID</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Profile Name</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Operations</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Resources</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Permitted Roles</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Duration</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Approval</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {allProfiles.map((p) => (
-                      <TableRow key={p.id} hover>
-                        <TableCell>{p.id}</TableCell>
+                        {/* 2. Database */}
                         <TableCell>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>{p.name}</Typography>
-                          <Typography variant="caption" color="text.secondary">{p.description}</Typography>
+                          {dbNames.length === 0 ? (
+                            <Typography variant="caption" color="text.secondary">None</Typography>
+                          ) : (
+                            <Stack spacing={0.75}>
+                              {dbNames.map(db => (
+                                <Typography key={db} variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.85rem', color: '#A6ADB4' }}>
+                                  {db}
+                                </Typography>
+                              ))}
+                            </Stack>
+                          )}
                         </TableCell>
+
+                        {/* 3. Accessible Tables */}
                         <TableCell>
-                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                            {p.allowed_operations.map((op) => (
-                              <Chip key={op} label={op} size="small" />
-                            ))}
-                          </Box>
+                          {dbNames.length === 0 ? (
+                            <Typography variant="caption" color="text.secondary">None</Typography>
+                          ) : (
+                            <Stack spacing={1}>
+                              {dbNames.map(db => {
+                                const tables = dbGroups[db] || [];
+                                return (
+                                    <Box key={db} sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {tables.map(t => (
+                                      <Chip
+                                        key={t}
+                                        label={t}
+                                        size="small"
+                                        variant="outlined"
+                                        sx={{
+                                          height: 20,
+                                          fontSize: '0.72rem',
+                                          bgcolor: '#151A1D',
+                                          borderColor: '#343F3D',
+                                          color: '#F5F5F5'
+                                        }}
+                                      />
+                                    ))}
+                                  </Box>
+                                );
+                              })}
+                            </Stack>
+                          )}
                         </TableCell>
+
+                        {/* 4. Allowed Operations */}
                         <TableCell>
-                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                            {p.resources.map((r) => (
+                          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.85rem' }}>
+                              {Array.isArray(p.allowed_operations)
+                                ? p.allowed_operations.join(', ')
+                                : (p.allowed_operations || 'SELECT')}
+                            </Typography>
+                            {p.requires_approval && (
                               <Chip
-                                key={r.id}
-                                label={r.table_name}
+                                label="Approval Required"
                                 size="small"
-                                color={getSensitivityColor(r.sensitivity)}
+                                color="warning"
                                 variant="outlined"
+                                sx={{ height: 18, fontSize: '0.65rem', fontWeight: 500 }}
                               />
-                            ))}
+                            )}
                           </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                            {p.roles.map((r) => (
-                              <Chip key={r.id} label={r.name} size="small" variant="filled" />
-                            ))}
-                          </Box>
-                        </TableCell>
-                        <TableCell>{p.max_duration_minutes}m</TableCell>
-                        <TableCell>
-                          <Chip
-                            size="small"
-                            label={p.requires_approval ? 'Required' : 'Auto'}
-                            color={p.requires_approval ? 'warning' : 'success'}
-                          />
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Card>
-          )}
-
-          {/* TAB 2: Admin Resources Catalog */}
-          {isAdmin && currentTab === 2 && (
-            <Card>
-              <TableContainer component={Paper} variant="outlined" sx={{ border: 'none' }}>
-                <Table>
-                  <TableHead sx={{ backgroundColor: 'rgba(255, 255, 255, 0.04)' }}>
-                    <TableRow>
-                      <TableCell sx={{ fontWeight: 600 }}>ID</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Database</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Table Name</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Sensitivity Level</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Description</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {resources.map((r) => (
-                      <TableRow key={r.id} hover>
-                        <TableCell>{r.id}</TableCell>
-                        <TableCell sx={{ fontWeight: 600 }}>{r.db_name}</TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600, color: 'primary.light' }}>
-                          {r.table_name}
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            size="small"
-                            label={r.sensitivity.toUpperCase()}
-                            color={getSensitivityColor(r.sensitivity)}
-                          />
-                        </TableCell>
-                        <TableCell sx={{ color: 'text.secondary' }}>{r.description || 'No description'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Card>
-          )}
-        </>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Card>
       )}
 
       {/* Admin: Create Access Profile Dialog */}
-      <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="md" fullWidth>
-        <form onSubmit={handleCreateProfile}>
-          <DialogTitle>Define Reusable Database Access Profile</DialogTitle>
-          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-            <TextField
-              label="Profile Name"
-              required
-              fullWidth
-              value={profileForm.name}
-              onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-            />
-            <TextField
-              label="Description & Business Justification"
-              required
-              fullWidth
-              multiline
-              rows={2}
-              value={profileForm.description}
-              onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })}
-            />
-            <FormControl fullWidth>
-              <InputLabel id="operations-label">Allowed SQL Operations</InputLabel>
-              <Select
-                labelId="operations-label"
-                multiple
-                value={profileForm.allowed_operations}
-                onChange={(e) => setProfileForm({ ...profileForm, allowed_operations: e.target.value })}
-                input={<OutlinedInput label="Allowed SQL Operations" />}
-                renderValue={(selected) => (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                    {selected.map((val) => (
-                      <Chip key={val} label={val} size="small" />
-                    ))}
-                  </Box>
-                )}
-              >
-                {ALL_OPERATIONS.map((op) => (
-                  <MenuItem key={op} value={op}>{op}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <Grid container spacing={2}>
-              <Grid item xs={6}>
-                <TextField
-                  label="Max Duration (Minutes)"
-                  type="number"
-                  fullWidth
-                  value={profileForm.max_duration_minutes}
-                  onChange={(e) => setProfileForm({ ...profileForm, max_duration_minutes: parseInt(e.target.value, 10) })}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <FormControl fullWidth>
-                  <InputLabel id="risk-label">Risk Rating</InputLabel>
-                  <Select
-                    labelId="risk-label"
-                    value={profileForm.risk_level}
-                    label="Risk Rating"
-                    onChange={(e) => setProfileForm({ ...profileForm, risk_level: e.target.value })}
-                  >
-                    <MenuItem value="low">Low</MenuItem>
-                    <MenuItem value="medium">Medium</MenuItem>
-                    <MenuItem value="high">High</MenuItem>
-                    <MenuItem value="critical">Critical</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-            </Grid>
-          </DialogContent>
-          <DialogActions sx={{ p: 2.5 }}>
-            <Button onClick={() => setOpenCreateDialog(false)} disabled={saving}>Cancel</Button>
-            <Button type="submit" variant="contained" disabled={saving}>
-              {saving ? 'Saving...' : 'Create Profile'}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
+      {isAdmin && (
+        <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="sm" fullWidth>
+          <form onSubmit={handleCreateProfile}>
+            <DialogTitle sx={{ pb: 1 }}>Define Access Profile</DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+              <TextField
+                label="Profile Name"
+                required
+                fullWidth
+                size="small"
+                value={profileForm.name}
+                onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+              />
+              <TextField
+                label="Description"
+                fullWidth
+                size="small"
+                value={profileForm.description}
+                onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })}
+              />
+              <FormControl fullWidth size="small">
+                <InputLabel id="operations-label">Allowed SQL Operations</InputLabel>
+                <Select
+                  labelId="operations-label"
+                  multiple
+                  value={profileForm.allowed_operations}
+                  onChange={(e) => setProfileForm({ ...profileForm, allowed_operations: e.target.value })}
+                  input={<OutlinedInput label="Allowed SQL Operations" />}
+                  renderValue={(selected) => selected.join(', ')}
+                >
+                  {ALL_OPERATIONS.map((op) => (
+                    <MenuItem key={op} value={op}>{op}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </DialogContent>
+            <DialogActions sx={{ p: 2 }}>
+              <Button onClick={() => setOpenCreateDialog(false)} disabled={saving} size="small">
+                Cancel
+              </Button>
+              <Button type="submit" variant="contained" disabled={saving} size="small">
+                {saving ? 'Saving...' : 'Create Profile'}
+              </Button>
+            </DialogActions>
+          </form>
+        </Dialog>
+      )}
     </Box>
   );
 }

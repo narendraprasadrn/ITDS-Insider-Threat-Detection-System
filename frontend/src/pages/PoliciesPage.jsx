@@ -16,11 +16,7 @@ import {
   Divider,
   Stack
 } from '@mui/material';
-import RuleIcon from '@mui/icons-material/Rule';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const PRESETS = [
@@ -125,10 +121,10 @@ export default function PoliciesPage() {
   return (
     <Box>
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          Open Policy Agent (Rego) Policy Engine
+        <Typography variant="h4" sx={{ fontWeight: 700, color: '#F5F7F7', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <BootstrapIcon name="bi-shield-check" size={24} color="#55E6C1" /> Open Policy Agent (Rego) Policy Engine
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{ color: '#AAB8BC', mt: 0.5 }}>
           Decoupled authorization governance: <code>access_request.rego</code> and <code>sql_query.rego</code> running in OPA.
         </Typography>
       </Box>
@@ -136,14 +132,14 @@ export default function PoliciesPage() {
       <Grid container spacing={3}>
         {/* Left: Input Console */}
         <Grid item xs={12} md={7}>
-          <Card>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345' }}>
             <CardHeader
-              avatar={<RuleIcon color="primary" />}
+              avatar={<BootstrapIcon name="bi-shield-check" size={20} color="#55E6C1" />}
               title="Interactive Policy Evaluation Sandbox"
               subheader="POST /api/policy/evaluate (access_request.rego)"
             />
             <CardContent>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1, fontWeight: 600 }}>
+              <Typography variant="caption" sx={{ color: '#AAB8BC', display: 'block', mb: 1, fontWeight: 600 }}>
                 TEST SCENARIO PRESETS:
               </Typography>
               <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mb: 2 }}>
@@ -169,15 +165,16 @@ export default function PoliciesPage() {
                 onChange={(e) => setJsonInput(e.target.value)}
                 sx={{
                   fontFamily: 'monospace',
-                  backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                  borderRadius: 1
+                  backgroundColor: '#171B1C',
+                  borderRadius: 1,
+                  '& .MuiOutlinedInput-notchedOutline': { borderColor: '#364345' }
                 }}
               />
 
               <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
                 <Button
                   variant="contained"
-                  startIcon={evaluating ? <CircularProgress size={18} color="inherit" /> : <PlayArrowIcon />}
+                  startIcon={evaluating ? <CircularProgress size={18} color="inherit" /> : <BootstrapIcon name="bi-play-fill" size={16} />}
                   onClick={handleEvaluate}
                   disabled={evaluating}
                 >
@@ -210,11 +207,11 @@ export default function PoliciesPage() {
                     }
                     icon={
                       result.action === 'allow' ? (
-                        <CheckCircleOutlineIcon fontSize="inherit" />
+                        <BootstrapIcon name="bi-check-circle-fill" size={18} color="#10B981" />
                       ) : result.action === 'require_approval' ? (
-                        <HourglassEmptyIcon fontSize="inherit" />
+                        <BootstrapIcon name="bi-hourglass-split" size={18} color="#F59E0B" />
                       ) : (
-                        <ErrorOutlineIcon fontSize="inherit" />
+                        <BootstrapIcon name="bi-shield-x" size={18} color="#EF4444" />
                       )
                     }
                     sx={{ mb: 2 }}
@@ -244,7 +241,9 @@ export default function PoliciesPage() {
                     variant="outlined"
                     sx={{
                       p: 1.5,
-                      backgroundColor: '#050811',
+                      backgroundColor: '#171B1C',
+                      borderColor: '#364345',
+                      color: '#55E6C1',
                       fontFamily: 'monospace',
                       fontSize: '0.8rem',
                       overflowX: 'auto',
@@ -256,8 +255,8 @@ export default function PoliciesPage() {
                 </Box>
               ) : (
                 <Box sx={{ textAlign: 'center', py: 8, color: 'text.secondary' }}>
-                  <RuleIcon sx={{ fontSize: 50, opacity: 0.3, mb: 1 }} />
-                  <Typography variant="body2">
+                  <BootstrapIcon name="bi-shield-check" size={32} color="#55E6C1" sx={{ opacity: 0.35, mb: 1.5 }} />
+                  <Typography variant="body2" sx={{ color: '#AAB8BC' }}>
                     Click "Evaluate Policy in OPA" to execute the Rego policy engine against the input document.
                   </Typography>
                 </Box>
@@ -268,12 +267,12 @@ export default function PoliciesPage() {
       </Grid>
 
       {/* Live End-to-End Policy Governance Banner */}
-      <Card sx={{ mt: 3, borderLeft: '4px solid #ab47bc' }}>
+      <Card sx={{ mt: 3, borderLeft: '4px solid #55E6C1' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <RuleIcon color="secondary" /> Live End-to-End Policy Governance in Production
+                <BootstrapIcon name="bi-shield-check" size={18} color="#55E6C1" /> Live End-to-End Policy Governance in Production
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 OPA and Rego policies are executed live in both:

@@ -6,12 +6,24 @@ import { pool } from '../src/db/pool.js';
 
 describe('Phase 4 OPA Policy Engine Integration Tests', () => {
   let devToken = '';
+  let adminToken = '';
+  let dbaToken = '';
 
   beforeAll(async () => {
     const res = await request(app)
       .post('/auth/login')
       .send({ username: 'developer', password: 'Password123!' });
     devToken = res.body.data.accessToken;
+
+    const adminRes = await request(app)
+      .post('/auth/login')
+      .send({ username: 'admin', password: 'Password123!' });
+    adminToken = adminRes.body.data.accessToken;
+
+    const dbaRes = await request(app)
+      .post('/auth/login')
+      .send({ username: 'dba', password: 'Password123!' });
+    dbaToken = dbaRes.body.data.accessToken;
   });
 
   afterAll(async () => {
@@ -149,11 +161,25 @@ describe('Phase 4 OPA Policy Engine Integration Tests', () => {
     });
   });
 
-  describe('POST /api/policy/evaluate (Dev endpoint)', () => {
-    it('should return 200 and evaluation result for access_request', async () => {
-      const res = await request(app)
+  describe('POST /api/policy/evaluate (Administrative Sandbox)', () => {
+    it('should return 403 Forbidden for Developer and DBA users attempting direct policy evaluation', async () => {
+      const devRes = await request(app)
         .post('/api/policy/evaluate')
         .set('Authorization', `Bearer ${devToken}`)
+        .send({ policy: 'access_request', input: {} });
+      expect(devRes.status).toBe(403);
+
+      const dbaRes = await request(app)
+        .post('/api/policy/evaluate')
+        .set('Authorization', `Bearer ${dbaToken}`)
+        .send({ policy: 'access_request', input: {} });
+      expect(dbaRes.status).toBe(403);
+    });
+
+    it('should return 200 and evaluation result for Admin users', async () => {
+      const res = await request(app)
+        .post('/api/policy/evaluate')
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({
           policy: 'access_request',
           input: {

@@ -18,11 +18,7 @@ import {
   Paper,
   Alert
 } from '@mui/material';
-import StorageIcon from '@mui/icons-material/Storage';
-import RuleIcon from '@mui/icons-material/Rule';
-import DnsIcon from '@mui/icons-material/Dns';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 
 export default function DashboardPlaceholder() {
   const [healthData, setHealthData] = useState(null);
@@ -62,7 +58,7 @@ export default function DashboardPlaceholder() {
           </Typography>
         </Box>
         <Button
-          startIcon={<RefreshIcon />}
+          startIcon={<BootstrapIcon name="bi-arrow-clockwise" size={15} />}
           variant="outlined"
           size="small"
           onClick={fetchHealth}
@@ -79,7 +75,7 @@ export default function DashboardPlaceholder() {
         <Grid item xs={12} md={4}>
           <Card sx={{ height: '100%' }}>
             <CardHeader
-              avatar={<DnsIcon color="primary" />}
+              avatar={<BootstrapIcon name="bi-server" size={20} color="#55E6C1" />}
               title="Backend Express API"
               subheader="Node.js 22 + ESM"
               action={
@@ -127,7 +123,7 @@ export default function DashboardPlaceholder() {
         <Grid item xs={12} md={4}>
           <Card sx={{ height: '100%' }}>
             <CardHeader
-              avatar={<StorageIcon color="primary" />}
+              avatar={<BootstrapIcon name="bi-database" size={20} color="#55E6C1" />}
               title="MySQL 8 Service"
               subheader="Schemas: itds_app & target_db"
               action={
@@ -181,7 +177,7 @@ export default function DashboardPlaceholder() {
         <Grid item xs={12} md={4}>
           <Card sx={{ height: '100%' }}>
             <CardHeader
-              avatar={<RuleIcon color="primary" />}
+              avatar={<BootstrapIcon name="bi-shield-check" size={20} color="#55E6C1" />}
               title="Open Policy Agent"
               subheader="Server Mode (Port 8181)"
               action={
@@ -225,7 +221,7 @@ export default function DashboardPlaceholder() {
         <Grid item xs={12}>
           <Alert
             severity="success"
-            icon={<CheckCircleOutlineIcon fontSize="inherit" />}
+            icon={<BootstrapIcon name="bi-check-circle" size={18} color="#10B981" />}
             sx={{
               backgroundColor: 'rgba(46, 125, 50, 0.1)',
               border: '1px solid rgba(46, 125, 50, 0.3)',

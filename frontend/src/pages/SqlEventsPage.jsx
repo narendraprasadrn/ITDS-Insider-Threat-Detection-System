@@ -34,15 +34,7 @@ import {
   FormControlLabel,
   Grid
 } from '@mui/material';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import StorageIcon from '@mui/icons-material/Storage';
-import PersonIcon from '@mui/icons-material/Person';
-import CodeIcon from '@mui/icons-material/Code';
+import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function SqlEventsPage() {
@@ -133,10 +125,10 @@ export default function SqlEventsPage() {
     <Box>
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: '#e0e6ed' }}>
-            SQL Activity Ingestion
+          <Typography variant="h4" sx={{ fontWeight: 700, color: '#F5F7F7', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <BootstrapIcon name="bi-journal-text" size={24} color="#55E6C1" /> SQL Activity Ingestion
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          <Typography variant="body2" sx={{ color: '#AAB8BC', mt: 0.5 }}>
             Real-time server-side query ingestion from <code>mysql.general_log</code> with AST attribution and flag analysis.
           </Typography>
         </Box>
@@ -150,11 +142,11 @@ export default function SqlEventsPage() {
                 size="small"
               />
             }
-            label={<Typography variant="body2" color="text.secondary">Live Polling (3s)</Typography>}
+            label={<Typography variant="body2" sx={{ color: '#AAB8BC' }}>Live Polling (3s)</Typography>}
           />
           <Button
             variant="outlined"
-            startIcon={<RefreshIcon />}
+            startIcon={<BootstrapIcon name="bi-arrow-clockwise" size={15} />}
             onClick={() => {
               setLoading(true);
               fetchEvents();
@@ -169,54 +161,54 @@ export default function SqlEventsPage() {
       {/* Metrics Row */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: 'background.paper', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345' }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 600 }}>
+              <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
                 Captured Events
               </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: '#90caf9', mt: 0.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#55E6C1', mt: 0.5 }}>
                 {totalEvents}
               </Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
                 Within query limit window
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: 'background.paper', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345' }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 600 }}>
+              <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
                 JIT Session Attributed
               </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: '#a5d6a7', mt: 0.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#10B981', mt: 0.5 }}>
                 {jitAttributed}
               </Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
                 Mapped to ephemeral session user
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: 'background.paper', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345' }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 600 }}>
+              <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
                 DDL / Schema Changes
               </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: ddlCount > 0 ? '#ef5350' : 'text.secondary', mt: 0.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: ddlCount > 0 ? '#EF4444' : '#AAB8BC', mt: 0.5 }}>
                 {ddlCount}
               </Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" sx={{ color: '#AAB8BC' }}>
                 Structural database operations
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: 'background.paper', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <Card sx={{ bgcolor: '#252E30', border: '1px solid #364345' }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 600 }}>
+              <Typography variant="caption" sx={{ color: '#AAB8BC', textTransform: 'uppercase', fontWeight: 600 }}>
                 Unbounded Reads
               </Typography>
               <Typography variant="h5" sx={{ fontWeight: 700, color: unboundedCount > 0 ? '#ffb74d' : 'text.secondary', mt: 0.5 }}>
@@ -231,7 +223,7 @@ export default function SqlEventsPage() {
       </Grid>
 
       {/* Filter Controls */}
-      <Paper sx={{ p: 2, mb: 3, bgcolor: 'background.paper', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <Paper sx={{ p: 2, mb: 3, bgcolor: '#252E30', border: '1px solid #364345' }}>
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} sm={4} md={3}>
             <FormControl fullWidth size="small">
@@ -350,8 +342,8 @@ export default function SqlEventsPage() {
                     </TableCell>
                     <TableCell>
                       {evt.username ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <PersonIcon sx={{ fontSize: 16, color: 'primary.light' }} />
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                          <BootstrapIcon name="bi-person-circle" size={15} color="#55E6C1" />
                           <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>
                             {evt.username}
                           </Typography>
@@ -459,8 +451,8 @@ export default function SqlEventsPage() {
                       />
                     </TableCell>
                     <TableCell align="center">
-                      <IconButton size="small" onClick={() => setSelectedEvent(evt)} color="primary">
-                        <CodeIcon fontSize="small" />
+                      <IconButton size="small" onClick={() => setSelectedEvent(evt)} color="primary" aria-label="Inspect SQL Event Details">
+                        <BootstrapIcon name="bi-search" size={14} />
                       </IconButton>
                     </TableCell>
                   </TableRow>
@@ -480,7 +472,7 @@ export default function SqlEventsPage() {
       >
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <StorageIcon color="primary" />
+            <BootstrapIcon name="bi-database" size={18} color="#55E6C1" />
             <Typography variant="h6">SQL Event #{selectedEvent?.id} Inspection</Typography>
           </Box>
           <Chip
@@ -534,7 +526,7 @@ export default function SqlEventsPage() {
                   </Typography>
                   <Button
                     size="small"
-                    startIcon={copiedRaw ? <CheckCircleIcon color="success" /> : <ContentCopyIcon />}
+                    startIcon={copiedRaw ? <BootstrapIcon name="bi-check-circle-fill" size={14} color="#10B981" /> : <BootstrapIcon name="bi-clipboard" size={14} />}
                     onClick={() => handleCopyRaw(selectedEvent.raw_sql)}
                   >
                     {copiedRaw ? 'Copied' : 'Copy SQL'}
@@ -543,11 +535,11 @@ export default function SqlEventsPage() {
                 <Paper
                   sx={{
                     p: 2,
-                    bgcolor: '#0a0d12',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    bgcolor: '#171B1C',
+                    border: '1px solid #364345',
                     fontFamily: 'monospace',
                     fontSize: '0.85rem',
-                    color: '#90caf9',
+                    color: '#55E6C1',
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-all'
                   }}
@@ -558,17 +550,17 @@ export default function SqlEventsPage() {
 
               {/* Normalized SQL */}
               <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5, color: '#AAB8BC' }}>
                   AST Normalized Pattern
                 </Typography>
                 <Paper
                   sx={{
                     p: 1.5,
-                    bgcolor: '#0d1117',
-                    border: '1px solid rgba(255,255,255,0.06)',
+                    bgcolor: '#171B1C',
+                    border: '1px solid #364345',
                     fontFamily: 'monospace',
                     fontSize: '0.8rem',
-                    color: '#e6edf3',
+                    color: '#F5F7F7',
                     whiteSpace: 'pre-wrap'
                   }}
                 >

@@ -1,5 +1,5 @@
 // frontend/src/pages/WorkspacePage.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -27,36 +27,24 @@ import {
   Select,
   MenuItem,
   Stack,
-  Divider,
-  Tooltip,
-  IconButton
+  Divider
 } from '@mui/material';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import TerminalIcon from '@mui/icons-material/Terminal';
-import StorageIcon from '@mui/icons-material/Storage';
-import TimerIcon from '@mui/icons-material/Timer';
-import SecurityIcon from '@mui/icons-material/Security';
-import HistoryIcon from '@mui/icons-material/History';
-import ReportProblemIcon from '@mui/icons-material/ReportProblem';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import BlockIcon from '@mui/icons-material/Block';
-import SpeedIcon from '@mui/icons-material/Speed';
-import AddTaskIcon from '@mui/icons-material/AddTask';
+import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useWorkspace } from '../context/WorkspaceContext.jsx';
 
 const SAMPLE_QUERIES = [
   {
-    name: 'Compliant Read',
+    name: 'Compliant Bounded Read (ALLOW)',
     sql: "SELECT customer_code, name, customer_category, credit_limit FROM Customers WHERE customer_category = 'enterprise' LIMIT 5;"
   },
   {
-    name: 'Bulk Read (Post-Hoc Anomaly)',
-    sql: 'SELECT * FROM Orders;'
+    name: 'Authorized Read (ALLOW)',
+    sql: 'SELECT * FROM Products;'
   },
   {
-    name: 'Out-of-Scope Table (Blocked)',
-    sql: 'SELECT salary_amount, payment_status FROM Payroll LIMIT 5;'
+    name: 'Critical Data Scan (Blocked)',
+    sql: 'SELECT * FROM Payroll;'
   },
   {
     name: 'Unauthorized DELETE (Blocked)',
@@ -69,39 +57,77 @@ const SAMPLE_QUERIES = [
 ];
 
 export default function WorkspacePage() {
-  const { user, accessToken } = useAuth();
+  const { user, accessToken, hasRole } = useAuth();
+  const isAdminOrDba = hasRole ? (hasRole('admin') || hasRole('dba')) : ((user?.roles || []).includes('admin') || (user?.roles || []).includes('dba'));
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const [activeSessions, setActiveSessions] = useState([]);
-  const [selectedSessionId, setSelectedSessionId] = useState(searchParams.get('sessionId') || '');
-  const [sqlQuery, setSqlQuery] = useState(SAMPLE_QUERIES[0].sql);
-  const [executing, setExecuting] = useState(false);
-  const [executionResult, setExecutionResult] = useState(null);
-  const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState(0);
+  // Persistent workspace state stored in React Context across navigation
+  const {
+    selectedSessionId,
+    setSelectedSessionId,
+    sqlQuery,
+    setSqlQuery,
+    executionResult,
+    setExecutionResult,
+    activeTab,
+    setActiveTab,
+    history,
+    setHistory,
+    violations,
+    setViolations,
+    resetWorkspace
+  } = useWorkspace();
 
-  // Telemetry lists
-  const [history, setHistory] = useState([]);
-  const [violations, setViolations] = useState([]);
+  const [allSessions, setAllSessions] = useState([]);
+  const [activeSessions, setActiveSessions] = useState([]);
+  const [availableProfiles, setAvailableProfiles] = useState([]);
+  const [executing, setExecuting] = useState(false);
+  const [activating, setActivating] = useState(false);
+  const [error, setError] = useState(null);
   const [timeLeft, setTimeLeft] = useState('');
 
-  // 1. Fetch user's active JIT sessions
+  const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
+  const isAdmin = userRoles.includes('admin') || user?.role === 'admin';
+  const isDba = userRoles.includes('dba') || user?.role === 'dba';
+  const primaryRole = isAdmin ? 'admin' : (isDba ? 'dba' : (user?.role || 'developer'));
+
+  const routineProfile = availableProfiles.find(p => !p.requires_approval) || availableProfiles[0];
+  const routineProfileName = routineProfile
+    ? routineProfile.name
+    : (isAdmin ? 'Admin Security Administration' : (isDba ? 'DBA Operations Profile' : 'Developer Read Profile'));
+
+  // Clear workspace state if authenticated user switches or logs out
+  const lastUserIdRef = useRef(user?.id);
+  useEffect(() => {
+    if (lastUserIdRef.current && lastUserIdRef.current !== user?.id) {
+      resetWorkspace();
+      setSelectedSessionId('');
+    }
+    lastUserIdRef.current = user?.id;
+  }, [user?.id, resetWorkspace, setSelectedSessionId]);
+
+  // 1. Fetch authenticated user's JIT sessions (both active and historical)
   const fetchSessions = async () => {
+    if (!accessToken) return;
     try {
       const res = await fetch('/api/sessions/my', {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        const live = (data.data.sessions || []).filter(s => s.status === 'active');
+        const rawSessions = data.data.sessions || [];
+        const live = (data.data.active_sessions || rawSessions).filter(s => s.status === 'active');
+        setAllSessions(rawSessions);
         setActiveSessions(live);
 
-        // Auto-select session if none selected or specified in URL
-        if (!selectedSessionId && live.length > 0) {
+        // Require explicit selection or preserve URL query param
+        const urlSessionId = searchParams.get('sessionId');
+        if (urlSessionId) {
+          setSelectedSessionId(urlSessionId);
+        } else if (!selectedSessionId && live.length === 1) {
+          // If no session was previously selected and there is exactly 1 active session, default to it
           setSelectedSessionId(String(live[0].id));
-        } else if (selectedSessionId && !live.some(s => String(s.id) === String(selectedSessionId))) {
-          if (live.length > 0) setSelectedSessionId(String(live[0].id));
         }
       }
     } catch (err) {
@@ -109,19 +135,44 @@ export default function WorkspacePage() {
     }
   };
 
+  const fetchAvailableProfiles = async () => {
+    if (!accessToken) return;
+    try {
+      const res = await fetch('/api/profiles/available', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAvailableProfiles(data.data.profiles || []);
+      }
+    } catch (err) {
+      console.error('Error fetching available profiles:', err);
+    }
+  };
+
   useEffect(() => {
     fetchSessions();
-  }, []);
+    fetchAvailableProfiles();
+  }, [accessToken, user?.id]);
 
-  const selectedSession = activeSessions.find(s => String(s.id) === String(selectedSessionId));
+  const activeSession = activeSessions.find(s => String(s.id) === String(selectedSessionId));
+  const anySession = allSessions.find(s => String(s.id) === String(selectedSessionId));
+  const selectedSession = activeSession || anySession;
+
+  const isSessionActive = Boolean(activeSession && activeSession.status === 'active');
+  const isSessionExpiredOrRevoked = Boolean(selectedSessionId && !isSessionActive);
 
   // 2. Fetch history & violations when selected session changes
   const fetchSessionTelemetry = async () => {
-    if (!selectedSessionId) return;
+    if (!selectedSessionId) {
+      setHistory([]);
+      setViolations([]);
+      return;
+    }
     try {
       const [histRes, violRes] = await Promise.all([
         fetch(`/api/workspace/history/${selectedSessionId}`, { headers: { Authorization: `Bearer ${accessToken}` } }),
-        fetch(`/api/violations?session_id=${selectedSessionId}`, { headers: { Authorization: `Bearer ${accessToken}` } })
+        fetch(`/api/workspace/violations/${selectedSessionId}`, { headers: { Authorization: `Bearer ${accessToken}` } })
       ]);
 
       const [histData, violData] = await Promise.all([histRes.json(), violRes.json()]);
@@ -143,6 +194,11 @@ export default function WorkspacePage() {
       return;
     }
 
+    if (!isSessionActive) {
+      setTimeLeft(selectedSession.status ? selectedSession.status.toUpperCase() : 'INACTIVE');
+      return;
+    }
+
     const updateTimer = () => {
       const remainingMs = new Date(selectedSession.end_time).getTime() - Date.now();
       if (remainingMs <= 0) {
@@ -157,12 +213,53 @@ export default function WorkspacePage() {
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [selectedSession]);
+  }, [selectedSession, isSessionActive]);
+
+  // Quick activate routine role profile
+  const handleQuickActivateRoleProfile = async () => {
+    setActivating(true);
+    setError(null);
+    try {
+      const targetProfile = availableProfiles.find(p => !p.requires_approval) || availableProfiles[0];
+      const targetProfileId = targetProfile ? targetProfile.id : (isAdmin ? 7 : (isDba ? 3 : 1));
+
+      const res = await fetch('/api/requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          profile_id: targetProfileId,
+          requested_duration_minutes: 60,
+          justification: `Routine operational access activated by ${primaryRole} workspace console.`
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'Failed to activate role session');
+      }
+
+      await fetchSessions();
+      if (data.data?.request?.session_id) {
+        setSelectedSessionId(String(data.data.request.session_id));
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActivating(false);
+    }
+  };
 
   // 4. Execute Query Pipeline
   const handleExecute = async () => {
     if (!selectedSessionId) {
-      setError('Please select an active JIT session before executing SQL.');
+      setError('Please explicitly select an active JIT session before executing SQL.');
+      return;
+    }
+    if (!isSessionActive || timeLeft === 'EXPIRED') {
+      setError('The selected session is expired or revoked. Please activate or request a new JIT session.');
       return;
     }
     if (!sqlQuery.trim()) {
@@ -193,6 +290,9 @@ export default function WorkspacePage() {
         // Pre-Execution Policy Block
         setExecutionResult({
           blocked: true,
+          outcome: 'DENIED',
+          eventId: data.data.eventId,
+          sessionId: data.data.sessionId,
           policyDecision: data.data.policyDecision,
           operation: data.data.operation,
           tables: data.data.tables,
@@ -201,7 +301,7 @@ export default function WorkspacePage() {
       } else if (!res.ok || !data.success) {
         setError(data.error?.message || 'SQL execution failed');
       } else {
-        // Successful execution
+        // Successful execution (ALLOWED, REVIEW, or POST-EXECUTION DETECTED)
         setExecutionResult(data.data);
       }
 
@@ -214,21 +314,34 @@ export default function WorkspacePage() {
     }
   };
 
+  const isRoleMismatched = selectedSession && isSessionActive && (
+    (isAdmin && selectedSession.profile_name === 'Developer Read Profile') ||
+    (isDba && selectedSession.profile_name === 'Developer Read Profile')
+  );
+
+  const canExecute = isSessionActive && timeLeft !== 'EXPIRED' && !executing;
+
   return (
     <Box>
       {/* Top Banner */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <TerminalIcon color="primary" /> In-App Database Workspace
+          <Typography variant="h4" sx={{ fontWeight: 700, color: '#F5F7F7', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <BootstrapIcon name="bi-terminal" size={24} color="#55E6C1" /> In-App SQL Workspace
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{ color: '#AAB8BC', mt: 0.5 }}>
             Execute SQL queries directly against <code>FinanceCorpDB</code> using your authorized least-privilege JIT session.
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+          <Chip
+            label={`Identity: ${user?.username} (${(user?.role || user?.roles?.[0] || 'user').toUpperCase()})`}
+            color="primary"
+            variant="outlined"
+            sx={{ fontWeight: 600 }}
+          />
           <Button
-            startIcon={<RefreshIcon />}
+            startIcon={<BootstrapIcon name="bi-arrow-clockwise" size={15} />}
             variant="outlined"
             size="small"
             onClick={() => { fetchSessions(); fetchSessionTelemetry(); }}
@@ -236,7 +349,7 @@ export default function WorkspacePage() {
             Refresh
           </Button>
           <Button
-            startIcon={<AddTaskIcon />}
+            startIcon={<BootstrapIcon name="bi-plus-circle" size={15} />}
             variant="contained"
             size="small"
             onClick={() => navigate('/sessions')}
@@ -248,8 +361,60 @@ export default function WorkspacePage() {
 
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
 
+      {/* Actionable Renewal Notice if Selected Session is Inactive/Expired/Revoked */}
+      {isSessionExpiredOrRevoked && (
+        <Alert
+          severity="warning"
+          icon={<BootstrapIcon name="bi-exclamation-triangle-fill" size={18} color="#F59E0B" />}
+          sx={{ mb: 3 }}
+          action={
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                color="warning"
+                variant="contained"
+                startIcon={activating ? <CircularProgress size={14} color="inherit" /> : <BootstrapIcon name="bi-lightning-charge-fill" size={14} />}
+                onClick={handleQuickActivateRoleProfile}
+                disabled={activating}
+                sx={{ textTransform: 'none' }}
+              >
+                {`Activate ${routineProfileName}`}
+              </Button>
+              <Button
+                size="small"
+                color="inherit"
+                variant="outlined"
+                onClick={() => navigate('/sessions')}
+                sx={{ textTransform: 'none' }}
+              >
+                Request Session
+              </Button>
+            </Stack>
+          }
+        >
+          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+            Session #{selectedSessionId} is {selectedSession?.status ? selectedSession.status.toUpperCase() : 'INACTIVE'}
+          </Typography>
+          <Typography variant="body2">
+            Execution is disabled for this session. Your SQL query text, results, and history are preserved. Please activate or request an active session to continue executing queries.
+          </Typography>
+        </Alert>
+      )}
+
+      {/* Role Profile Mismatch Warning */}
+      {isRoleMismatched && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+            Notice: Developer Profile Active for {primaryRole.toUpperCase()}
+          </Typography>
+          <Typography variant="body2">
+            You are currently selected on <b>Developer Read Profile</b>. As an <b>{primaryRole.toUpperCase()}</b>, you should use your authorized routine profile (e.g., <b>{isAdmin ? 'Admin Security Administration' : 'DBA Operations Profile'}</b>) for full visibility.
+          </Typography>
+        </Alert>
+      )}
+
       {/* Active Session Selector Bar */}
-      <Card sx={{ mb: 3, borderLeft: '4px solid #1976d2' }}>
+      <Card sx={{ mb: 3, borderLeft: isSessionActive ? '4px solid #55E6C1' : '4px solid #F59E0B' }}>
         <CardContent sx={{ py: 2 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={4}>
@@ -261,58 +426,84 @@ export default function WorkspacePage() {
                   label="Active JIT Session"
                   onChange={(e) => setSelectedSessionId(e.target.value)}
                 >
-                  {activeSessions.length === 0 ? (
-                    <MenuItem value="" disabled>No active JIT sessions found</MenuItem>
-                  ) : (
-                    activeSessions.map((s) => (
-                      <MenuItem key={s.id} value={String(s.id)}>
-                        #{s.id} — {s.profile_name} ({s.mysql_username})
-                      </MenuItem>
-                    ))
+                  <MenuItem value="">
+                    <em>-- Select a JIT Session --</em>
+                  </MenuItem>
+                  {activeSessions.map((s) => (
+                    <MenuItem key={s.id} value={String(s.id)}>
+                      #{s.id} — {s.profile_name} ({s.mysql_username}) [ACTIVE]
+                    </MenuItem>
+                  ))}
+                  {/* Preserve inactive selected session option in dropdown */}
+                  {isSessionExpiredOrRevoked && anySession && (
+                    <MenuItem key={anySession.id} value={String(anySession.id)} sx={{ color: 'text.secondary' }}>
+                      #{anySession.id} — {anySession.profile_name} ({anySession.status ? anySession.status.toUpperCase() : 'INACTIVE'})
+                    </MenuItem>
                   )}
                 </Select>
               </FormControl>
             </Grid>
 
-            {selectedSession && (
+            {selectedSession ? (
               <>
                 <Grid item xs={12} sm={3}>
                   <Typography variant="caption" color="text.secondary" display="block">
-                    PROVISIONED USER & PROFILE
+                    EPHEMERAL IDENTITY & SCOPE
                   </Typography>
                   <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace' }}>
                     {selectedSession.mysql_username}
                   </Typography>
-                  <Typography variant="caption" color="primary.light">
-                    {selectedSession.profile_name}
+                  <Typography variant="caption" sx={{ color: isSessionActive ? '#55E6C1' : '#F59E0B', fontWeight: 600 }}>
+                    {selectedSession.profile_name} (DB: FinanceCorpDB)
                   </Typography>
                 </Grid>
 
                 <Grid item xs={12} sm={3}>
                   <Typography variant="caption" color="text.secondary" display="block">
-                    OPERATIONS & GRANTS
+                    GRANTED OPERATIONS
                   </Typography>
-                  <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
+                  <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
                     {(selectedSession.granted_operations || []).map(op => (
-                      <Chip key={op} label={op} size="small" color="primary" sx={{ height: 18, fontSize: '0.65rem' }} />
+                      <Chip key={op} label={op} size="small" color={isSessionActive ? 'primary' : 'default'} sx={{ height: 18, fontSize: '0.65rem' }} />
                     ))}
                   </Stack>
                 </Grid>
 
                 <Grid item xs={12} sm={2} sx={{ textAlign: 'right' }}>
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, bgcolor: 'rgba(255,255,255,0.04)', p: 1, borderRadius: 1 }}>
-                    <TimerIcon fontSize="small" color={timeLeft === 'EXPIRED' ? 'error' : 'warning'} />
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, bgcolor: '#151A1D', border: '1px solid #343F3D', p: 1, borderRadius: 1.5 }}>
+                    <BootstrapIcon name="bi-clock-history" size={16} color={isSessionActive && timeLeft !== 'EXPIRED' ? '#55E6C1' : '#EF4444'} />
                     <Box sx={{ textAlign: 'left' }}>
                       <Typography variant="caption" color="text.secondary" display="block" sx={{ lineHeight: 1 }}>
-                        TIME REMAINING
+                        SESSION STATUS
                       </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 700, color: timeLeft === 'EXPIRED' ? 'error.main' : 'warning.main' }}>
-                        {timeLeft || 'Active'}
+                      <Typography variant="body2" sx={{ fontWeight: 700, color: isSessionActive && timeLeft !== 'EXPIRED' ? '#55E6C1' : '#EF4444' }}>
+                        {timeLeft || (isSessionActive ? 'Active' : 'Inactive')}
                       </Typography>
                     </Box>
                   </Box>
                 </Grid>
               </>
+            ) : (
+              <Grid item xs={12} sm={8}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', p: 1.5, borderRadius: 1.5 }}>
+                  <Typography variant="body2" color="warning.main" sx={{ fontWeight: 500 }}>
+                    {activeSessions.length === 0
+                      ? `No active JIT sessions found for ${user?.username}. Click below to activate your routine profile.`
+                      : 'Please select an active JIT session from the dropdown above to execute queries.'}
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="warning"
+                    startIcon={activating ? <CircularProgress size={14} color="inherit" /> : <BootstrapIcon name="bi-lightning-charge-fill" size={14} />}
+                    onClick={handleQuickActivateRoleProfile}
+                    disabled={activating}
+                    sx={{ textTransform: 'none', ml: 2, whiteSpace: 'nowrap' }}
+                  >
+                    {`Activate ${routineProfileName}`}
+                  </Button>
+                </Box>
+              </Grid>
             )}
           </Grid>
         </CardContent>
@@ -368,9 +559,9 @@ export default function WorkspacePage() {
             <Button
               variant="contained"
               color="primary"
-              startIcon={executing ? <CircularProgress size={16} color="inherit" /> : <PlayArrowIcon />}
+              startIcon={executing ? <CircularProgress size={16} color="inherit" /> : <BootstrapIcon name="bi-play-fill" size={16} />}
               onClick={handleExecute}
-              disabled={executing || !selectedSessionId || timeLeft === 'EXPIRED'}
+              disabled={!canExecute}
             >
               {executing ? 'Evaluating & Executing...' : 'Execute Query'}
             </Button>
@@ -378,66 +569,169 @@ export default function WorkspacePage() {
         </CardContent>
       </Card>
 
-      {/* Policy Evaluation Banner */}
+      {/* 4 DISTINCT OUTCOMES: ALLOWED, DENIED, REVIEW, POST-EXECUTION DETECTED */}
       {executionResult && (
-        <Box sx={{ mb: 3 }}>
-          {executionResult.blocked ? (
+        <Box sx={{ mb: 2.5 }}>
+          {/* 1. DENIED (Pre-execution preventative block) */}
+          {(executionResult.blocked || executionResult.outcome === 'DENIED') && (
             <Alert
               severity="error"
-              icon={<BlockIcon fontSize="inherit" />}
+              icon={<BootstrapIcon name="bi-shield-x" size={20} color="#EF4444" />}
               sx={{ fontWeight: 500 }}
+              action={
+                executionResult.eventId && (
+                  <Button
+                    size="small"
+                    color="inherit"
+                    variant="outlined"
+                    startIcon={<BootstrapIcon name="bi-shield-check" size={14} />}
+                    onClick={() => setActiveTab(2)}
+                    sx={{ fontSize: '0.72rem', textTransform: 'none' }}
+                  >
+                    Inspect Violation #{executionResult.eventId}
+                  </Button>
+                )
+              }
             >
               <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                Query Pre-Emptively Blocked by OPA Policy
+                Query Pre-Emptively Blocked [DENIED]
               </Typography>
               <Typography variant="body2" sx={{ mt: 0.5 }}>
-                {executionResult.message}
+                {executionResult.message || 'Operation or table access denied prior to execution by policy.'}
               </Typography>
-              <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
-                {(executionResult.policyDecision?.violations || []).map(v => (
-                  <Chip key={v} label={v} size="small" color="error" />
-                ))}
-              </Box>
-            </Alert>
-          ) : (
-            <Alert
-              severity={executionResult.policyDecision?.violations?.length > 0 ? 'warning' : 'success'}
-              icon={<CheckCircleIcon fontSize="inherit" />}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                    {executionResult.policyDecision?.violations?.length > 0
-                      ? 'Executed with Post-Hoc Telemetry Anomaly'
-                      : 'OPA Policy Permitted & Executed'}
-                  </Typography>
-                  <Typography variant="body2">
-                    Operation: <b>{executionResult.operation}</b> | Target Tables: <b>{executionResult.tables?.join(', ') || 'N/A'}</b>
-                  </Typography>
-                </Box>
-                <Stack direction="row" spacing={1.5}>
-                  <Chip
-                    icon={<SpeedIcon />}
-                    label={`${executionResult.executionTimeMs} ms`}
-                    size="small"
-                    color="default"
-                    variant="outlined"
-                  />
-                  <Chip
-                    label={`${executionResult.rowCount} rows returned`}
-                    size="small"
-                    color="primary"
-                  />
-                </Stack>
-              </Box>
-              {executionResult.policyDecision?.violations?.length > 0 && (
-                <Box sx={{ mt: 1 }}>
-                  <Typography variant="caption" color="warning.main" sx={{ fontWeight: 600 }}>
-                    Telemetry Flags: {executionResult.policyDecision.violations.join(', ')}
-                  </Typography>
+              {isAdminOrDba && (
+                <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  {(executionResult.policyDecision?.violations || []).map(v => (
+                    <Chip key={v} label={`Violation: ${v}`} size="small" color="error" sx={{ height: 20, fontSize: '0.7rem' }} />
+                  ))}
                 </Box>
               )}
             </Alert>
+          )}
+
+          {/* 2. REVIEW (Executed with non-blocking behavioral review flag e.g. UNBOUNDED_BULK_READ on large/sensitive tables) */}
+          {executionResult.outcome === 'REVIEW' && (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1.5,
+                bgcolor: 'rgba(245, 158, 11, 0.08)',
+                borderColor: 'rgba(245, 158, 11, 0.35)',
+                borderRadius: 2
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <BootstrapIcon name="bi-exclamation-circle" size={18} color="#F59E0B" />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#FCD34D' }}>
+                    Query Executed Successfully
+                  </Typography>
+                  <Chip
+                    label="REVIEW"
+                    size="small"
+                    sx={{ bgcolor: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', fontWeight: 700, height: 20, fontSize: '0.65rem' }}
+                  />
+                </Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip icon={<BootstrapIcon name="bi-stopwatch" size={12} />} label={`${executionResult.executionTimeMs} ms`} size="small" variant="outlined" sx={{ height: 22, fontSize: '0.7rem' }} />
+                  <Chip label={`${executionResult.rowCount} rows`} size="small" sx={{ bgcolor: 'rgba(245, 158, 11, 0.15)', color: '#FCD34D', fontWeight: 700, height: 22, fontSize: '0.7rem' }} />
+                  {executionResult.eventId && (
+                    <Button
+                      size="small"
+                      variant="text"
+                      color="info"
+                      startIcon={<BootstrapIcon name="bi-shield-check" size={13} />}
+                      onClick={() => setActiveTab(2)}
+                      sx={{ fontSize: '0.75rem', py: 0.2, textTransform: 'none' }}
+                    >
+                      View in Session Violations (Event #{executionResult.eventId})
+                    </Button>
+                  )}
+                </Stack>
+              </Box>
+              <Typography variant="body2" sx={{ color: '#A6ADB4', mt: 0.5, fontSize: '0.82rem' }}>
+                {isAdminOrDba
+                  ? `Behavioral review: Query flagged by rule ${executionResult.policyDecision?.violations?.join(', ') || 'UNBOUNDED_BULK_READ'} (full table scan without LIMIT). Attributed to Event #${executionResult.eventId || 'N/A'}.`
+                  : 'Behavioral review note: Query executed without a LIMIT clause. Result returned with session telemetry tracking.'}
+              </Typography>
+            </Paper>
+          )}
+
+          {/* 3. POST-EXECUTION DETECTED (Executed, then anomaly detected post-hoc) */}
+          {executionResult.outcome === 'POST-EXECUTION DETECTED' && (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1.5,
+                bgcolor: 'rgba(245, 158, 11, 0.08)',
+                borderColor: 'rgba(245, 158, 11, 0.35)',
+                borderRadius: 2
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <BootstrapIcon name="bi-exclamation-triangle" size={18} color="#F59E0B" />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#FDE68A' }}>
+                    Query Executed Successfully
+                  </Typography>
+                  <Chip
+                    label="POST-EXECUTION DETECTED"
+                    size="small"
+                    sx={{ bgcolor: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', fontWeight: 700, height: 20, fontSize: '0.65rem' }}
+                  />
+                </Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip icon={<BootstrapIcon name="bi-stopwatch" size={12} />} label={`${executionResult.executionTimeMs} ms`} size="small" variant="outlined" sx={{ height: 22, fontSize: '0.7rem' }} />
+                  <Chip label={`${executionResult.rowCount} rows`} size="small" sx={{ bgcolor: 'rgba(245, 158, 11, 0.2)', color: '#FCD34D', fontWeight: 700, height: 22, fontSize: '0.7rem' }} />
+                  {executionResult.eventId && (
+                    <Button
+                      size="small"
+                      variant="text"
+                      color="warning"
+                      startIcon={<BootstrapIcon name="bi-shield-check" size={13} />}
+                      onClick={() => setActiveTab(2)}
+                      sx={{ fontSize: '0.75rem', py: 0.2, textTransform: 'none' }}
+                    >
+                      View in Session Violations (Event #{executionResult.eventId})
+                    </Button>
+                  )}
+                </Stack>
+              </Box>
+              <Typography variant="body2" sx={{ color: '#A6ADB4', mt: 0.5, fontSize: '0.82rem' }}>
+                {isAdminOrDba
+                  ? `Post-execution anomaly: Query returned ${executionResult.rowCount} rows exceeding baseline threshold. Attributed to Event #${executionResult.eventId || 'N/A'}.`
+                  : `Telemetry note: Query returned ${executionResult.rowCount} rows exceeding baseline threshold.`}
+              </Typography>
+            </Paper>
+          )}
+
+          {/* 4. ALLOWED (Fully compliant) */}
+          {executionResult.outcome === 'ALLOWED' && (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1.5,
+                bgcolor: 'rgba(16, 185, 129, 0.08)',
+                borderColor: 'rgba(16, 185, 129, 0.35)',
+                borderRadius: 2
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <BootstrapIcon name="bi-check-circle-fill" size={18} color="#10B981" />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#A7F3D0' }}>
+                    Query Executed Successfully [ALLOWED]
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip icon={<BootstrapIcon name="bi-stopwatch" size={12} />} label={`${executionResult.executionTimeMs} ms`} size="small" variant="outlined" sx={{ height: 22, fontSize: '0.7rem' }} />
+                  <Chip label={`${executionResult.rowCount} rows`} size="small" sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34D399', fontWeight: 700, height: 22, fontSize: '0.7rem' }} />
+                </Stack>
+              </Box>
+              <Typography variant="body2" sx={{ color: '#A6ADB4', mt: 0.5, fontSize: '0.82rem' }}>
+                Operation: <b>{executionResult.operation}</b> | Target Tables: <b>{executionResult.tables?.join(', ') || 'N/A'}</b>
+              </Typography>
+            </Paper>
           )}
         </Box>
       )}
@@ -446,7 +740,7 @@ export default function WorkspacePage() {
       <Tabs
         value={activeTab}
         onChange={(e, val) => setActiveTab(val)}
-        sx={{ mb: 2, borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}
+        sx={{ mb: 2, borderBottom: '1px solid #343F3D' }}
       >
         <Tab label={`Query Results ${executionResult?.rows ? `(${executionResult.rowCount})` : ''}`} />
         <Tab label={`Session Query History (${history.length})`} />
@@ -514,6 +808,7 @@ export default function WorkspacePage() {
             <Table size="small">
               <TableHead sx={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
                 <TableRow>
+                  <TableCell sx={{ fontWeight: 600 }}>Event ID</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Timestamp</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Operation</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>SQL Statement</TableCell>
@@ -524,13 +819,16 @@ export default function WorkspacePage() {
               <TableBody>
                 {history.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                       No queries executed yet in this session.
                     </TableCell>
                   </TableRow>
                 ) : (
                   history.map((h) => (
                     <TableRow key={h.id} hover>
+                      <TableCell>
+                        <Chip label={`#${h.id}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.7rem', fontFamily: 'monospace' }} />
+                      </TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
                         {new Date(h.event_time).toLocaleTimeString()}
                       </TableCell>
@@ -565,6 +863,7 @@ export default function WorkspacePage() {
             <Table size="small">
               <TableHead sx={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
                 <TableRow>
+                  <TableCell sx={{ fontWeight: 600 }}>Event ID</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Rule</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Severity</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Enforcement</TableCell>
@@ -575,13 +874,16 @@ export default function WorkspacePage() {
               <TableBody>
                 {violations.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                       No policy violations recorded for this session.
                     </TableCell>
                   </TableRow>
                 ) : (
                   violations.map((v) => (
                     <TableRow key={v.id} hover>
+                      <TableCell>
+                        <Chip label={`#${v.event_id || v.eventId || v.id}`} size="small" color="primary" variant="outlined" sx={{ height: 20, fontSize: '0.7rem', fontFamily: 'monospace' }} />
+                      </TableCell>
                       <TableCell sx={{ fontWeight: 700, color: 'error.light' }}>{v.rule}</TableCell>
                       <TableCell>
                         <Chip size="small" label={v.severity.toUpperCase()} color={v.severity === 'critical' ? 'error' : 'warning'} sx={{ height: 20, fontSize: '0.7rem' }} />

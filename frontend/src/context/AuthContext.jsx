@@ -3,6 +3,16 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
+const normalizeUser = (u) => {
+  if (!u) return null;
+  const primaryRole = (u.roles && u.roles[0]) ? u.roles[0] : (u.role || 'developer');
+  return {
+    ...u,
+    role: primaryRole,
+    roles: Array.isArray(u.roles) ? u.roles : [primaryRole]
+  };
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem('itds_access_token') || null);
@@ -26,7 +36,7 @@ export function AuthProvider({ children }) {
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          setUser(data.data.user);
+          setUser(normalizeUser(data.data.user));
         } else {
           // Token invalid or expired
           logout();
@@ -57,15 +67,16 @@ export function AuthProvider({ children }) {
     }
 
     const { user: authUser, accessToken: newAccess, refreshToken: newRefresh } = data.data;
+    const normalizedUser = normalizeUser(authUser);
 
-    setUser(authUser);
+    setUser(normalizedUser);
     setAccessToken(newAccess);
     setRefreshToken(newRefresh);
 
     localStorage.setItem('itds_access_token', newAccess);
     localStorage.setItem('itds_refresh_token', newRefresh);
 
-    return authUser;
+    return normalizedUser;
   };
 
   const logout = async () => {

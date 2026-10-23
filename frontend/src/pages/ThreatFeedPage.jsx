@@ -36,15 +36,7 @@ import {
   Grid,
   LinearProgress
 } from '@mui/material';
-import WarningIcon from '@mui/icons-material/Warning';
-import ShieldIcon from '@mui/icons-material/Shield';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import PendingActionsIcon from '@mui/icons-material/PendingActions';
-import ReportProblemIcon from '@mui/icons-material/ReportProblem';
-import PersonIcon from '@mui/icons-material/Person';
-import SpeedIcon from '@mui/icons-material/Speed';
+import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function ThreatFeedPage() {
@@ -200,7 +192,7 @@ export default function ThreatFeedPage() {
           />
           <Button
             variant="outlined"
-            startIcon={<RefreshIcon />}
+            startIcon={<BootstrapIcon name="bi-arrow-clockwise" size={15} />}
             onClick={() => {
               setLoading(true);
               fetchData();
@@ -594,7 +586,7 @@ export default function ThreatFeedPage() {
       >
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <SpeedIcon color="warning" />
+            <BootstrapIcon name="bi-speedometer" size={18} color="#F59E0B" />
             <Typography variant="h6">{selectedBreakdown?.title}</Typography>
           </Box>
           <Chip
@@ -622,7 +614,7 @@ export default function ThreatFeedPage() {
                   >
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <ReportProblemIcon color="warning" fontSize="small" />
+                        <BootstrapIcon name="bi-exclamation-triangle-fill" size={14} color="#F59E0B" />
                         <Typography variant="subtitle2" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
                           {item.rule_id}
                         </Typography>

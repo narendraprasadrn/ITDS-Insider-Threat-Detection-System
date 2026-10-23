@@ -69,7 +69,7 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
       port: env.DB.PORT,
       user: jitCreds.username,
       password: jitCreds.password,
-      database: 'FinanceCorpDB'
+      database: env.DB.TARGET_NAME
     });
 
     try {
@@ -94,7 +94,7 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
       port: env.DB.PORT,
       user: jitCreds.username,
       password: jitCreds.password,
-      database: 'FinanceCorpDB'
+      database: env.DB.TARGET_NAME
     });
 
     let dbError = null;
@@ -130,7 +130,7 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
       port: env.DB.PORT,
       user: jitCreds.username,
       password: jitCreds.password,
-      database: 'FinanceCorpDB'
+      database: env.DB.TARGET_NAME
     });
 
     let dbError = null;
@@ -166,7 +166,7 @@ describe('Phase 7 Policy Evaluation of Observed Queries Tests', () => {
       port: env.DB.PORT,
       user: jitCreds.username,
       password: jitCreds.password,
-      database: 'FinanceCorpDB'
+      database: env.DB.TARGET_NAME
     });
 
     let result = null;

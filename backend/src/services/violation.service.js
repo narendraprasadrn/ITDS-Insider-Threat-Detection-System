@@ -160,10 +160,15 @@ class ViolationService {
     for (const v of violationsToInsert) {
       try {
         const [res] = await pool.execute(
-          `INSERT INTO policy_violations (event_id, session_id, user_id, rule, severity, reason, enforcement_type)
+          `INSERT IGNORE INTO policy_violations (event_id, session_id, user_id, rule, severity, reason, enforcement_type)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [v.eventId, v.sessionId, v.userId, v.rule, v.severity, v.reason, v.enforcementType]
         );
+
+        if (!res.insertId) {
+          // Already recorded for this event and rule
+          continue;
+        }
 
         const savedViolation = {
           id: res.insertId,

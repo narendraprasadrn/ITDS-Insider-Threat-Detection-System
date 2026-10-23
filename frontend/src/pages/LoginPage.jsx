@@ -14,9 +14,7 @@ import {
   Container,
   Paper
 } from '@mui/material';
-import SecurityIcon from '@mui/icons-material/Security';
-import LoginIcon from '@mui/icons-material/Login';
-import PersonIcon from '@mui/icons-material/Person';
+import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -44,12 +42,10 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const authUser = await login(username, password);
-      const isPrivileged = (authUser?.roles || []).some(r => ['admin', 'dba'].includes(r));
-      const targetPath = from === '/' ? (isPrivileged ? '/' : '/sessions') : from;
-      navigate(targetPath, { replace: true });
+      await login(username, password);
+      navigate(from, { replace: true });
     } catch (err) {
-      setError(err.message || 'Authentication failed. Please verify credentials.');
+      setError(err.response?.data?.error?.message || err.message || 'Authentication failed. Please verify credentials.');
     } finally {
       setLoading(false);
     }
@@ -58,7 +54,6 @@ export default function LoginPage() {
   const handleSelectPersona = (personaUsername) => {
     setUsername(personaUsername);
     setPassword('Password123!');
-    setError(null);
   };
 
   return (
@@ -68,33 +63,53 @@ export default function LoginPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#070b14',
-        p: 2
+        backgroundColor: '#171B1C',
+        px: 2,
+        py: 4
       }}
     >
-      <Container maxWidth="sm">
+      <Container maxWidth="xs">
         <Card
           sx={{
-            backgroundColor: '#0f172a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-            borderRadius: 3,
+            backgroundColor: '#252E30',
+            border: '1px solid #364345',
+            borderRadius: 2.5,
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
             p: 1
           }}
         >
-          <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
+          <CardContent sx={{ p: { xs: 2.5, sm: 3.5 } }}>
             <Box sx={{ textAlign: 'center', mb: 3 }}>
-              <SecurityIcon sx={{ fontSize: 50, color: 'primary.main', mb: 1 }} />
-              <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '0.02em' }}>
+              <Box
+                sx={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 2,
+                  bgcolor: 'rgba(85, 230, 193, 0.12)',
+                  border: '1px solid rgba(85, 230, 193, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mx: 'auto',
+                  mb: 1.5
+                }}
+              >
+                <BootstrapIcon name="bi-shield-lock-fill" size={26} color="#55E6C1" />
+              </Box>
+              <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '0.01em', color: '#F5F7F7' }}>
                 ITDS Authentication
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Insider Threat Detection System - Role-Based Access Control
+              <Typography variant="body2" sx={{ color: '#AAB8BC', fontSize: '0.82rem', mt: 0.5 }}>
+                Insider Threat Detection System • Zero-Trust Access Console
               </Typography>
             </Box>
 
             {error && (
-              <Alert severity="error" sx={{ mb: 3, borderRadius: 1.5 }}>
+              <Alert
+                severity="error"
+                icon={<BootstrapIcon name="bi-exclamation-triangle-fill" size={16} color="#EF4444" />}
+                sx={{ mb: 2.5, borderRadius: 1.5 }}
+              >
                 {error}
               </Alert>
             )}
@@ -134,34 +149,35 @@ export default function LoginPage() {
                 variant="contained"
                 size="large"
                 disabled={loading}
-                startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <LoginIcon />}
-                sx={{ py: 1.2, fontWeight: 600, fontSize: '0.95rem' }}
+                startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <BootstrapIcon name="bi-box-arrow-in-right" size={17} />}
+                sx={{ py: 1.2, fontWeight: 700, fontSize: '0.92rem' }}
               >
-                {loading ? 'Authenticating...' : 'Sign In'}
+                {loading ? 'Authenticating...' : 'Sign In to Console'}
               </Button>
             </Box>
 
-            <Divider sx={{ my: 3 }}>
-              <Typography variant="caption" color="text.secondary">
-                ONE-CLICK DEMO PERSONAS (Phase 2 Seed)
+            <Divider sx={{ my: 3, borderColor: '#364345' }}>
+              <Typography variant="caption" sx={{ color: '#AAB8BC', fontSize: '0.72rem', letterSpacing: '0.04em' }}>
+                QUICK-SELECT PERSONA
               </Typography>
             </Divider>
 
-            <Paper variant="outlined" sx={{ p: 2, backgroundColor: 'rgba(255, 255, 255, 0.02)' }}>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-                Click any role to load seeded credentials (all use <code>Password123!</code>):
+            <Paper variant="outlined" sx={{ p: 1.75, backgroundColor: '#171B1C', border: '1px solid #364345', borderRadius: 2 }}>
+              <Typography variant="caption" sx={{ color: '#AAB8BC', mb: 1.25, fontSize: '0.74rem' }} display="block">
+                Click any persona to load seeded role credentials:
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {DEMO_PERSONAS.map((p) => (
                   <Chip
                     key={p.username}
-                    label={`${p.label}`}
+                    label={p.label}
                     color={p.color}
                     variant={username === p.username ? 'filled' : 'outlined'}
                     onClick={() => handleSelectPersona(p.username)}
-                    icon={<PersonIcon />}
+                    icon={<BootstrapIcon name="bi-person-badge" size={13} />}
                     clickable
                     size="small"
+                    sx={{ height: 26, fontSize: '0.74rem', fontWeight: 600 }}
                   />
                 ))}
               </Box>

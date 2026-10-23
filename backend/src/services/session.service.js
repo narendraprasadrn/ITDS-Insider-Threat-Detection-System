@@ -61,14 +61,15 @@ export const sessionService = {
     const grantedResources = profile.resources.map(r => `${r.db_name}.${r.table_name}`);
 
     const [sessionResult] = await pool.execute(
-      `INSERT INTO db_sessions (request_id, user_id, profile_id, status, end_time, mysql_username, granted_operations, granted_resources)
-       VALUES (?, ?, ?, 'active', ?, ?, ?, ?)`,
+      `INSERT INTO db_sessions (request_id, user_id, profile_id, status, end_time, mysql_username, mysql_password, granted_operations, granted_resources)
+       VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
       [
         requestId,
         userId,
         profile.id,
         endTime,
         mysqlUsername,
+        mysqlPassword,
         JSON.stringify(allowedOps),
         JSON.stringify(grantedResources)
       ]
@@ -136,7 +137,7 @@ export const sessionService = {
 
       for (const s of expired) {
         await this.dropMysqlUser(s.mysql_username);
-        await pool.execute(`UPDATE db_sessions SET status = 'expired' WHERE id = ?`, [s.id]);
+        await pool.execute(`UPDATE db_sessions SET status = 'expired', mysql_password = NULL WHERE id = ?`, [s.id]);
 
         // Synchronize access_requests lifecycle
         await pool.execute(
@@ -181,8 +182,8 @@ export const sessionService = {
     // Drop user and kill connections
     await this.dropMysqlUser(session.mysql_username);
 
-    // Update session status to revoked
-    await pool.execute(`UPDATE db_sessions SET status = 'revoked' WHERE id = ?`, [sessionId]);
+    // Update session status to revoked and clear credentials
+    await pool.execute(`UPDATE db_sessions SET status = 'revoked', mysql_password = NULL WHERE id = ?`, [sessionId]);
 
     // Synchronize access_requests lifecycle
     await pool.execute(
@@ -311,13 +312,14 @@ export const sessionService = {
    */
   async getUserSessions(userId) {
     const [rows] = await pool.execute(
-      `SELECT s.id, s.request_id, s.profile_id, s.status, s.start_time, s.end_time,
+      `SELECT s.id, s.request_id, s.user_id, s.profile_id, s.status, s.start_time, s.end_time,
               s.mysql_username, s.granted_operations, s.granted_resources,
-              p.name AS profile_name, p.risk_level
+              p.name AS profile_name, p.risk_level,
+              (SELECT r.name FROM user_roles ur JOIN roles r ON ur.role_id = r.id WHERE ur.user_id = s.user_id LIMIT 1) AS user_role
        FROM db_sessions s
        JOIN access_profiles p ON s.profile_id = p.id
        WHERE s.user_id = ?
-       ORDER BY s.id DESC LIMIT 20`,
+       ORDER BY s.id DESC LIMIT 50`,
       [userId]
     );
 

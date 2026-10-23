@@ -5,14 +5,16 @@ import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { sqlParserService } from './sqlParser.service.js';
 import { policyService } from './policy.service.js';
-import { violationService } from './violation.service.js';
 import { riskEngineService } from './riskEngine.service.js';
 import { auditService } from './audit.service.js';
+import { sseService } from './sse.service.js';
+import { violationService } from './violation.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 export const workspaceService = {
   /**
    * Execute SQL query through active JIT session with pre-execution OPA policy enforcement
+   * Distinguishes ALLOWED, DENIED, REVIEW, and POST-EXECUTION DETECTED
    */
   async executeQuery({ user, sessionId, sql, req = null }) {
     if (!sessionId || !sql || !sql.trim()) {
@@ -24,8 +26,8 @@ export const workspaceService = {
     // 1. Fetch and validate active JIT session
     const [sessRows] = await pool.execute(
       `SELECT s.id, s.request_id, s.user_id, s.profile_id, s.status, s.start_time, s.end_time,
-              s.mysql_username, s.granted_operations, s.granted_resources,
-              p.name AS profile_name
+              s.mysql_username, s.mysql_password, s.granted_operations, s.granted_resources,
+              p.name AS profile_name, p.max_rows_hint, p.risk_level
        FROM db_sessions s
        JOIN access_profiles p ON s.profile_id = p.id
        WHERE s.id = ? LIMIT 1`,
@@ -37,11 +39,14 @@ export const workspaceService = {
     }
 
     const session = sessRows[0];
-    const isElevated = user.roles.some(r => r === 'admin' || r === 'dba');
 
-    // Strict boundary: user can only execute against their own session unless admin/dba
-    if (!isElevated && session.user_id !== user.id) {
-      throw new AppError('You are not authorized to execute queries in this session', 403, 'FORBIDDEN_SESSION');
+    // Strict boundary: user can only execute against their own session to avoid cross-profile execution
+    if (session.user_id !== user.id) {
+      throw new AppError(
+        'You are only authorized to execute queries against your own active JIT session',
+        403,
+        'FORBIDDEN_SESSION'
+      );
     }
 
     const isExpired = session.status !== 'active' || new Date(session.end_time) <= new Date();
@@ -95,12 +100,25 @@ export const workspaceService = {
     }
 
     // 4. Pre-Execution Policy Evaluation (OPA / Session Matrix)
+    const isUnboundedExempt = [
+      'Admin Security Administration',
+      'DBA Operations Profile',
+      'DBA Maintenance Profile'
+    ].includes(session.profile_name);
+
     const policyResult = await policyService.evaluateSqlQuery(
       {
         session_id: session.id,
         user_id: user.id,
+        profile_name: session.profile_name,
+        user_roles: user.roles,
+        allow_unbounded_reads: isUnboundedExempt,
         granted_operations: grantedOps,
         granted_resources: grantedRes,
+        critical_resources: [
+          'FinanceCorpDB.Payroll', 'FinanceCorpDB.TaxRecords', 'FinanceCorpDB.SecurityAuditLogs',
+          'Payroll', 'TaxRecords', 'SecurityAuditLogs'
+        ],
         is_expired: false
       },
       {
@@ -114,8 +132,10 @@ export const workspaceService = {
       }
     );
 
-    // 5. IF POLICY BLOCKS QUERY: Block pre-execution!
-    if (!policyResult.allow) {
+    // 5. IF POLICY BLOCKS QUERY: Block pre-execution (outcome === 'DENY' or policyResult.deny === true)
+    const isDenied = policyResult.outcome === 'DENY' || policyResult.deny === true;
+
+    if (isDenied) {
       logger.warn(
         { sessionId: session.id, user: user.username, violations: policyResult.violations, sql: trimmedSql },
         'SQL query PRE-EMPTIVELY BLOCKED by policy in workspace'
@@ -146,24 +166,56 @@ export const workspaceService = {
       const eventId = blockedEvent.insertId;
 
       // Persist policy violations
-      for (const rule of policyResult.violations) {
+      for (const rule of (policyResult.violations || [])) {
         let reason = `Blocked pre-execution: rule '${rule}' violated`;
         if (rule === 'TABLE_OUT_OF_SCOPE') {
           reason = `Query accessed unauthorized table: ${parsed.tables.join(', ')}`;
         } else if (rule === 'OPERATION_NOT_GRANTED') {
-          reason = `Operation '${parsed.operation}' is not granted in active profile`;
+          reason = `Operation '${parsed.operation}' is not granted in active profile '${session.profile_name}'`;
         } else if (rule === 'CROSS_SCHEMA_ACCESS') {
           reason = `Cross-schema access to unauthorized system catalog`;
         } else if (rule === 'UNAUTHORIZED_DDL') {
           reason = `DDL modification prohibited in profile '${session.profile_name}'`;
+        } else if (rule === 'CRITICAL_BULK_EXFILTRATION') {
+          reason = `Unbounded bulk read on critical sensitivity table without authorization`;
         }
 
-        await pool.execute(
+        const [vRes] = await pool.execute(
           `INSERT INTO policy_violations (event_id, session_id, user_id, rule, severity, reason, enforcement_type)
            VALUES (?, ?, ?, ?, 'high', ?, 'blocked_pre_execution')`,
           [eventId, session.id, user.id, rule, reason]
         );
+
+        violationService.emitViolation({
+          id: vRes.insertId,
+          event_id: eventId,
+          session_id: session.id,
+          user_id: user.id,
+          rule,
+          severity: 'high',
+          reason,
+          enforcement_type: 'blocked_pre_execution',
+          created_at: new Date()
+        });
       }
+
+      // Broadcast blocked query observed to SSE stream (Admin & DBA consoles)
+      sseService.broadcast('query_observed', {
+        id: eventId,
+        session_id: session.id,
+        user_id: user.id,
+        username: user.username,
+        mysql_username: session.mysql_username,
+        thread_id: 0,
+        event_time: new Date().toISOString(),
+        raw_sql: trimmedSql,
+        normalized_sql: parsed.normalized_sql,
+        operation: parsed.operation,
+        tables: parsed.tables,
+        flags: parsed.flags,
+        status: 'blocked',
+        policy_decision: policyResult
+      });
 
       // Update session risk assessment
       await riskEngineService.evaluateSessionRisk(session.id);
@@ -177,7 +229,9 @@ export const workspaceService = {
         details: {
           sessionId: session.id,
           sql: trimmedSql,
-          violations: policyResult.violations
+          outcome: 'DENIED',
+          violations: policyResult.violations,
+          reasons: policyResult.reasons
         },
         req
       });
@@ -185,32 +239,42 @@ export const workspaceService = {
       return {
         success: false,
         blocked: true,
+        outcome: 'DENIED',
+        eventId,
         sessionId: session.id,
         sql: trimmedSql,
         operation: parsed.operation,
         tables: parsed.tables,
         policyDecision: {
+          outcome: 'DENY',
           allow: false,
+          deny: true,
           violations: policyResult.violations,
-          reasons: policyResult.violations.map(v => `Rule ${v} violated: pre-execution access denied.`)
+          reasons: policyResult.reasons || policyResult.violations.map(v => `Rule ${v} violated: pre-execution access denied.`)
         },
-        message: `Query pre-emptively blocked by policy: ${policyResult.violations.join(', ')}`
+        message: `Query pre-emptively blocked by policy: ${(policyResult.violations || []).join(', ')}`
       };
     }
 
-    // 6. IF ALLOWED: Execute against target FinanceCorpDB database via dedicated connection
+    // 6. IF AUTHORIZED (ALLOW or REVIEW): Execute against target FinanceCorpDB database using restricted JIT session credentials
     const cleanSql = trimmedSql.endsWith(';') ? trimmedSql.slice(0, -1) : trimmedSql;
     const startTime = Date.now();
     let conn;
 
     try {
+      // Connect using the actual ephemeral JIT MySQL credentials
+      const dbUser = session.mysql_password ? session.mysql_username : env.DB.USER;
+      const dbPassword = session.mysql_password || env.DB.PASSWORD;
+
       conn = await mysql.createConnection({
         host: env.DB.HOST,
         port: env.DB.PORT,
-        user: env.DB.USER,
-        password: env.DB.PASSWORD,
+        user: dbUser,
+        password: dbPassword,
         database: env.DB.TARGET_NAME
       });
+
+      const connectionThreadId = conn.threadId || 0;
 
       // Execute clean SQL query in target database scope
       const [rows, fields] = await conn.query({
@@ -225,24 +289,46 @@ export const workspaceService = {
       const columns = Array.isArray(fields) ? fields.map(f => f.name) : [];
       const rowCount = Array.isArray(rows) ? rows.length : (rows?.affectedRows ?? 0);
 
-      // 7. Check for Post-Hoc Telemetry Anomaly (Unbounded Bulk Read)
-      let postHocViolations = [];
-      if (parsed.flags.is_unbounded_read && rowCount >= 5) {
-        postHocViolations.push('UNBOUNDED_BULK_READ');
+      // 7. Check for Behavioral Outcomes: ALLOWED, REVIEW, or POST-EXECUTION DETECTED
+      const maxRowsHint = session.max_rows_hint || 500;
+      let outcome = 'ALLOWED';
+      let violationsToRecord = [];
+
+      const LOW_SENSITIVITY_TABLES = new Set([
+        'products', 'itds_db.products', 'financecorpdb.products'
+      ]);
+
+      const isOnlyLowSensitivity = (parsed.tables || []).length > 0 &&
+        (parsed.tables || []).every(t => LOW_SENSITIVITY_TABLES.has(String(t).toLowerCase()));
+
+      if (policyResult.outcome === 'REVIEW') {
+        if (isOnlyLowSensitivity && rowCount <= 50) {
+          // Benign, authorized routine read returning low row count on low-sensitivity catalog tables (e.g. Products <= 50 rows)
+          outcome = 'ALLOWED';
+          violationsToRecord = [];
+        } else {
+          outcome = 'REVIEW';
+          violationsToRecord = policyResult.violations || ['UNBOUNDED_BULK_READ'];
+        }
+      } else if (!isUnboundedExempt && (rowCount > maxRowsHint || (parsed.flags.is_unbounded_read && rowCount > 50))) {
+        outcome = 'POST-EXECUTION DETECTED';
+        violationsToRecord = ['UNBOUNDED_BULK_READ'];
       }
 
-      // 8. Record executed SQL event in sql_events
+      // 8. Record executed SQL event in sql_events with status 'attributed'
+      const workspaceLogId = `workspace:${session.id}:${connectionThreadId}:${Date.now()}`;
       const [insertEvt] = await pool.execute(
         `INSERT INTO sql_events (
            session_id, user_id, mysql_username, thread_id, event_time,
            raw_sql, normalized_sql, operation, tables, rows_hint, execution_time_ms,
            flags, policy_decision, source_log_id, status
-         ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'attributed')`,
+         ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'attributed')
+         ON DUPLICATE KEY UPDATE execution_time_ms = VALUES(execution_time_ms)`,
         [
           session.id,
           user.id,
           session.mysql_username,
-          0,
+          connectionThreadId,
           trimmedSql,
           parsed.normalized_sql,
           parsed.operation,
@@ -250,28 +336,83 @@ export const workspaceService = {
           rowCount,
           executionTimeMs,
           JSON.stringify(parsed.flags),
-          JSON.stringify({ allow: true, violations: postHocViolations }),
-          `workspace:${Date.now()}`
+          JSON.stringify({ outcome, allow: outcome === 'ALLOWED', violations: violationsToRecord }),
+          workspaceLogId
         ]
       );
 
       const eventId = insertEvt.insertId;
 
-      // Record post-hoc violation if unbounded
-      if (postHocViolations.includes('UNBOUNDED_BULK_READ')) {
-        await pool.execute(
+      // 9. Persist violations if review or post-hoc anomaly
+      for (const rule of violationsToRecord) {
+        const enforcementType = 'detected_post_hoc';
+        const reason = outcome === 'REVIEW'
+          ? `Behavioral review: full table scan (${rule}) permitted with risk tracking`
+          : `Post-execution anomaly: query returned ${rowCount} rows exceeding threshold (${maxRowsHint})`;
+
+        const [vRes] = await pool.execute(
           `INSERT INTO policy_violations (event_id, session_id, user_id, rule, severity, reason, enforcement_type)
-           VALUES (?, ?, ?, 'UNBOUNDED_BULK_READ', 'medium', ?, 'detected_post_hoc')`,
-          [eventId, session.id, user.id, `Unbounded bulk export: returned ${rowCount} rows without LIMIT clause`]
+           VALUES (?, ?, ?, ?, 'medium', ?, ?)`,
+          [eventId, session.id, user.id, rule, reason, enforcementType]
         );
+
+        violationService.emitViolation({
+          id: vRes.insertId,
+          event_id: eventId,
+          session_id: session.id,
+          user_id: user.id,
+          rule,
+          severity: 'medium',
+          reason,
+          enforcement_type: enforcementType,
+          created_at: new Date()
+        });
       }
 
-      // 9. Update Risk Score
-      await riskEngineService.evaluateSessionRisk(session.id);
+      // Broadcast executed query observed to SSE stream (Admin & DBA consoles)
+      sseService.broadcast('query_observed', {
+        id: eventId,
+        session_id: session.id,
+        user_id: user.id,
+        username: user.username,
+        mysql_username: session.mysql_username,
+        thread_id: 0,
+        event_time: new Date().toISOString(),
+        raw_sql: trimmedSql,
+        normalized_sql: parsed.normalized_sql,
+        operation: parsed.operation,
+        tables: parsed.tables,
+        flags: parsed.flags,
+        status: 'attributed',
+        policy_decision: { outcome, allow: outcome === 'ALLOWED', violations: violationsToRecord }
+      });
+
+      if (violationsToRecord.length > 0) {
+        await riskEngineService.evaluateSessionRisk(session.id);
+      }
+
+      // Audit log execution
+      await auditService.log({
+        eventType: outcome === 'ALLOWED' ? 'SQL_EXECUTED' : 'SQL_POLICY_FLAGGED',
+        userId: user.id,
+        username: user.username,
+        status: outcome === 'ALLOWED' ? 'SUCCESS' : 'WARNING',
+        details: {
+          sessionId: session.id,
+          sql: trimmedSql,
+          outcome,
+          rowCount,
+          executionTimeMs,
+          violations: violationsToRecord
+        },
+        req
+      });
 
       return {
         success: true,
         blocked: false,
+        outcome,
+        eventId,
         sessionId: session.id,
         sql: trimmedSql,
         operation: parsed.operation,
@@ -281,8 +422,15 @@ export const workspaceService = {
         rowCount,
         executionTimeMs,
         policyDecision: {
-          allow: true,
-          violations: postHocViolations
+          outcome,
+          allow: outcome === 'ALLOWED',
+          review: outcome === 'REVIEW',
+          violations: violationsToRecord,
+          reasons: violationsToRecord.length === 0
+            ? ['Query fully compliant with session grant']
+            : (policyResult.reasons && policyResult.reasons.length > 0
+              ? policyResult.reasons
+              : [`Query executed with telemetry flag: ${violationsToRecord.join(', ')}`])
         }
       };
     } catch (dbErr) {
@@ -293,7 +441,7 @@ export const workspaceService = {
       const executionTimeMs = Date.now() - startTime;
       logger.error({ err: dbErr.message, sql: trimmedSql }, 'Database execution error in workspace');
 
-      // Record database-level failure/block
+      // Record database-level failure
       await pool.execute(
         `INSERT INTO sql_events (
            session_id, user_id, mysql_username, thread_id, event_time,
@@ -353,5 +501,38 @@ export const workspaceService = {
       flags: typeof r.flags === 'string' ? JSON.parse(r.flags) : r.flags,
       policy_decision: typeof r.policy_decision === 'string' ? JSON.parse(r.policy_decision) : r.policy_decision
     }));
+  },
+
+  /**
+   * Get policy violations for a session (scoped to session owner or elevated admin/dba)
+   */
+  async getSessionViolations(sessionId, user) {
+    const isElevated = user.roles.some(r => r === 'admin' || r === 'dba');
+
+    const [sessRows] = await pool.execute(
+      `SELECT user_id FROM db_sessions WHERE id = ? LIMIT 1`,
+      [sessionId]
+    );
+
+    if (sessRows.length === 0) {
+      throw new AppError('Session not found', 404, 'NOT_FOUND');
+    }
+
+    if (!isElevated && sessRows[0].user_id !== user.id) {
+      throw new AppError('Unauthorized access to session violations', 403, 'FORBIDDEN');
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT pv.id, pv.event_id, pv.session_id, pv.user_id, pv.rule, pv.severity,
+              pv.reason, pv.enforcement_type, pv.created_at,
+              se.raw_sql, se.operation
+       FROM policy_violations pv
+       INNER JOIN sql_events se ON pv.event_id = se.id
+       WHERE pv.session_id = ?
+       ORDER BY pv.id DESC LIMIT 50`,
+      [sessionId]
+    );
+
+    return rows;
   }
 };

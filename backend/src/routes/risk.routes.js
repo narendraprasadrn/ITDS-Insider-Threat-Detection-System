@@ -10,5 +10,6 @@ router.get('/risk-scores', ...requireSecurityRole, riskController.listRiskScores
 router.get('/risk-scores/:sessionId', ...requireSecurityRole, riskController.getSessionRisk);
 router.get('/alerts', ...requireSecurityRole, riskController.listAlerts);
 router.patch('/alerts/:id', ...requireSecurityRole, riskController.updateAlertStatus);
+router.get('/monitoring-stats', ...requireSecurityRole, riskController.getMonitoringStats);
 
 export default router;

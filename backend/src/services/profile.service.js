@@ -87,6 +87,22 @@ export const profileService = {
    * Return profiles available to the specified user based on their roles
    */
   async getAvailableProfilesForUser(userId) {
+    // Identify primary user role to prioritize role-appropriate routine profiles
+    const [userRoles] = await pool.execute(
+      `SELECT r.name FROM user_roles ur JOIN roles r ON ur.role_id = r.id WHERE ur.user_id = ? LIMIT 1`,
+      [userId]
+    );
+    const role = userRoles[0]?.name;
+
+    let orderClause = 'ORDER BY ap.id ASC';
+    if (role === 'admin') {
+      orderClause = 'ORDER BY CASE WHEN ap.id = 7 THEN 1 WHEN ap.id = 3 THEN 2 ELSE 3 END, ap.id ASC';
+    } else if (role === 'dba') {
+      orderClause = 'ORDER BY CASE WHEN ap.id = 3 THEN 1 WHEN ap.id = 4 THEN 2 ELSE 3 END, ap.id ASC';
+    } else if (role === 'developer') {
+      orderClause = 'ORDER BY CASE WHEN ap.id = 1 THEN 1 WHEN ap.id = 2 THEN 2 ELSE 3 END, ap.id ASC';
+    }
+
     const [rows] = await pool.execute(
       `SELECT DISTINCT ap.id, ap.name, ap.description, ap.allowed_operations,
               ap.max_duration_minutes, ap.max_rows_hint, ap.risk_level, ap.requires_approval,
@@ -95,7 +111,7 @@ export const profileService = {
        JOIN role_profiles rp ON ap.id = rp.profile_id
        JOIN user_roles ur ON rp.role_id = ur.role_id
        WHERE ur.user_id = ?
-       ORDER BY ap.id ASC`,
+       ${orderClause}`,
       [userId]
     );
     return await this.hydrateProfiles(rows);

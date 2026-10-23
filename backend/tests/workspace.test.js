@@ -129,9 +129,9 @@ describe('Phase 11 In-App Workspace & Persistent Request Lifecycle Integration T
       .post('/access-requests')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
-        profile_id: 5, // Executive Payroll & Compensation (requires_approval: true)
+        profile_id: 4, // DBA Maintenance Profile (requires_approval: true)
         requested_duration_minutes: 30,
-        justification: 'Quarterly financial compensation review'
+        justification: 'Quarterly maintenance review'
       });
 
     expect(res.status).toBe(200);
@@ -334,5 +334,97 @@ describe('Phase 11 In-App Workspace & Persistent Request Lifecycle Integration T
 
     expect(reqRes.status).toBe(403);
     expect(reqRes.body.success).toBe(false);
+  });
+
+  // Requirement 16 & 17: Non-blocking behavioural review with canonical event ID tracing
+  it('16 & 17. Unbounded read executes as non-blocking REVIEW and yields canonical eventId in sql_events and policy_violations', async () => {
+    // Create an active session for developer
+    const reqRes = await request(app)
+      .post('/access-requests')
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({
+        profile_id: 1, // Developer Read Profile
+        requested_duration_minutes: 30,
+        justification: 'Testing canonical event ID tracing for review outcome'
+      });
+
+    expect(reqRes.status).toBe(201);
+    const traceSessionId = reqRes.body.data.sessionId;
+
+    // Execute unbounded read: SELECT * FROM Customers;
+    const execRes = await request(app)
+      .post('/workspace/execute')
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({
+        session_id: traceSessionId,
+        sql: 'SELECT * FROM Customers;'
+      });
+
+    expect(execRes.status).toBe(200);
+    expect(execRes.body.success).toBe(true);
+    expect(execRes.body.data.blocked).toBe(false);
+    expect(execRes.body.data.outcome).toBe('REVIEW');
+    expect(execRes.body.data.rowCount).toBeGreaterThan(0);
+    expect(execRes.body.data.eventId).toBeDefined();
+
+    const canonicalEventId = execRes.body.data.eventId;
+
+    // Verify canonical event in sql_events
+    const [eventRows] = await pool.query(
+      `SELECT id, session_id, user_id, raw_sql, operation, status FROM sql_events WHERE id = ?`,
+      [canonicalEventId]
+    );
+    expect(eventRows.length).toBe(1);
+    expect(eventRows[0].id).toBe(canonicalEventId);
+    expect(eventRows[0].session_id).toBe(traceSessionId);
+    expect(eventRows[0].user_id).toBe(devUser.id);
+    expect(eventRows[0].status).toBe('attributed');
+
+    // Verify canonical event in policy_violations
+    const [violRows] = await pool.query(
+      `SELECT id, event_id, session_id, user_id, rule, severity, enforcement_type FROM policy_violations WHERE event_id = ?`,
+      [canonicalEventId]
+    );
+    expect(violRows.length).toBeGreaterThanOrEqual(1);
+    expect(violRows[0].event_id).toBe(canonicalEventId);
+    expect(violRows[0].rule).toBe('UNBOUNDED_BULK_READ');
+    expect(violRows[0].severity).toBe('medium');
+    expect(violRows[0].enforcement_type).toBe('detected_post_hoc');
+
+    // 18. DBA view verifies the exact same persisted event records
+    const dbaEventsRes = await request(app)
+      .get('/sql-events?limit=10')
+      .set('Authorization', `Bearer ${dbaToken}`);
+    expect(dbaEventsRes.status).toBe(200);
+    const dbaEventFound = dbaEventsRes.body.data.events.some(e => e.id === canonicalEventId);
+    expect(dbaEventFound).toBe(true);
+
+    const dbaViolsRes = await request(app)
+      .get(`/violations?session_id=${traceSessionId}`)
+      .set('Authorization', `Bearer ${dbaToken}`);
+    expect(dbaViolsRes.status).toBe(200);
+    const dbaViolFound = dbaViolsRes.body.data.violations.some(v => v.event_id === canonicalEventId);
+    expect(dbaViolFound).toBe(true);
+
+    // 19. Admin view verifies the exact same persisted event records
+    const adminViolsRes = await request(app)
+      .get(`/violations?session_id=${traceSessionId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(adminViolsRes.status).toBe(200);
+    const adminViolFound = adminViolsRes.body.data.violations.some(v => v.event_id === canonicalEventId);
+    expect(adminViolFound).toBe(true);
+
+    // 20. Developer can access session violations via workspace route, but denied for other users
+    const devViolRes = await request(app)
+      .get(`/workspace/violations/${traceSessionId}`)
+      .set('Authorization', `Bearer ${devToken}`);
+    expect(devViolRes.status).toBe(200);
+    expect(devViolRes.body.success).toBe(true);
+    expect(devViolRes.body.data.violations.some(v => v.event_id === canonicalEventId)).toBe(true);
+
+    // Revoke trace session
+    await request(app)
+      .post(`/sessions/${traceSessionId}/revoke`)
+      .set('Authorization', `Bearer ${adminToken}`);
   });
 });

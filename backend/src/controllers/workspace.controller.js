@@ -32,5 +32,17 @@ export const workspaceController = {
     } catch (err) {
       next(err);
     }
+  },
+
+  async getSessionViolations(req, res, next) {
+    try {
+      const violations = await workspaceService.getSessionViolations(req.params.sessionId, req.user);
+      res.status(200).json({
+        success: true,
+        data: { violations }
+      });
+    } catch (err) {
+      next(err);
+    }
   }
 };

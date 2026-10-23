@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { theme } from './theme/theme.js';
 import { AuthProvider } from './context/AuthContext.jsx';
+import { WorkspaceProvider } from './context/WorkspaceContext.jsx';
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx';
 import Layout from './components/layout/Layout.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
@@ -14,8 +15,7 @@ import PoliciesPage from './pages/PoliciesPage.jsx';
 import SessionsPage from './pages/SessionsPage.jsx';
 import WorkspacePage from './pages/WorkspacePage.jsx';
 import SqlEventsPage from './pages/SqlEventsPage.jsx';
-import ViolationsPage from './pages/ViolationsPage.jsx';
-import ThreatFeedPage from './pages/ThreatFeedPage.jsx';
+import SecurityMonitoringPage from './pages/SecurityMonitoringPage.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -23,43 +23,68 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* Public route */}
-            <Route path="/login" element={<LoginPage />} />
+        <WorkspaceProvider>
+          <BrowserRouter>
+            <Routes>
+              {/* Public route */}
+              <Route path="/login" element={<LoginPage />} />
 
-            {/* Protected application shell */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Layout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<DashboardPage />} />
-              <Route path="profiles" element={<ProfilesPage />} />
-              <Route path="policies" element={<PoliciesPage />} />
-              <Route path="sessions" element={<SessionsPage />} />
-              <Route path="workspace" element={<WorkspacePage />} />
-              <Route path="sql-events" element={<ProtectedRoute requiredRoles={['admin', 'dba']}><SqlEventsPage /></ProtectedRoute>} />
-              <Route path="violations" element={<ProtectedRoute requiredRoles={['admin', 'dba']}><ViolationsPage /></ProtectedRoute>} />
-              <Route path="threats" element={<ProtectedRoute requiredRoles={['admin', 'dba']}><ThreatFeedPage /></ProtectedRoute>} />
+              {/* Protected application shell */}
               <Route
-                path="users"
+                path="/"
                 element={
-                  <ProtectedRoute requiredRoles={['admin']}>
-                    <UserManagement />
+                  <ProtectedRoute>
+                    <Layout />
                   </ProtectedRoute>
                 }
-              />
-              <Route path="*" element={<NotFound />} />
-            </Route>
+              >
+                <Route index element={<DashboardPage />} />
+                <Route path="profiles" element={<ProfilesPage />} />
+                <Route
+                  path="policies"
+                  element={
+                    <ProtectedRoute requiredRoles={['admin']}>
+                      <PoliciesPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="sessions" element={<SessionsPage />} />
+                <Route path="workspace" element={<WorkspacePage />} />
+                <Route
+                  path="sql-events"
+                  element={
+                    <ProtectedRoute requiredRoles={['admin', 'dba']}>
+                      <SqlEventsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="monitoring"
+                  element={
+                    <ProtectedRoute requiredRoles={['admin', 'dba']}>
+                      <SecurityMonitoringPage />
+                    </ProtectedRoute>
+                  }
+                />
+                {/* Backwards-compatible redirects to unified Security Monitoring */}
+                <Route path="violations" element={<Navigate to="/monitoring" replace />} />
+                <Route path="threats" element={<Navigate to="/monitoring" replace />} />
+                <Route
+                  path="users"
+                  element={
+                    <ProtectedRoute requiredRoles={['admin']}>
+                      <UserManagement />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="*" element={<NotFound />} />
+              </Route>
 
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
+              {/* Fallback */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </WorkspaceProvider>
       </AuthProvider>
     </ThemeProvider>
   );

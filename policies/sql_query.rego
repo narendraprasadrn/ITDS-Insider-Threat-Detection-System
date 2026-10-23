@@ -5,6 +5,47 @@ import future.keywords.if
 import future.keywords.contains
 
 default allow = false
+default deny = false
+default authorized = false
+
+# -------------------------------------------------------------
+# HELPERS & EXEMPTIONS
+# -------------------------------------------------------------
+
+is_unbounded_read_exempt if {
+    input.session.allow_unbounded_reads == true
+}
+
+is_unbounded_read_exempt if {
+    input.session.profile_name in [
+        "Admin Security Administration",
+        "DBA Operations Profile",
+        "DBA Maintenance Profile"
+    ]
+}
+
+critical_table_names := [
+    "payroll", "taxrecords", "securityauditlogs",
+    "target_db.payroll", "target_db.taxrecords", "target_db.securityauditlogs",
+    "financecorpdb.payroll", "financecorpdb.taxrecords", "financecorpdb.securityauditlogs",
+    "itds_db.payroll", "itds_db.taxrecords", "itds_db.securityauditlogs"
+]
+
+is_critical_resource_accessed if {
+    some t in input.query.tables
+    lower(t) in critical_table_names
+}
+
+is_critical_resource_accessed if {
+    some t in input.query.tables
+    some cr in input.session.critical_resources
+    lower(t) == lower(cr)
+}
+
+table_in_granted_resources(table) if {
+    some granted in input.session.granted_resources
+    endswith(lower(granted), concat(".", ["", lower(table)]))
+}
 
 # -------------------------------------------------------------
 # VIOLATIONS IDENTIFICATION
@@ -49,10 +90,27 @@ violations contains violation if {
     }
 }
 
+# Unbounded bulk read on critical tables (severity: critical -> triggers DENY)
 violations contains violation if {
     input.query.operation == "SELECT"
     input.query.select_star == true
     input.query.has_limit == false
+    not is_unbounded_read_exempt
+    is_critical_resource_accessed
+    violation := {
+        "rule": "UNBOUNDED_BULK_READ",
+        "severity": "critical",
+        "reason": "Unbounded bulk read (SELECT *) attempted on critical sensitivity data"
+    }
+}
+
+# Unbounded bulk read on standard application tables (severity: medium -> triggers REVIEW)
+violations contains violation if {
+    input.query.operation == "SELECT"
+    input.query.select_star == true
+    input.query.has_limit == false
+    not is_unbounded_read_exempt
+    not is_critical_resource_accessed
     violation := {
         "rule": "UNBOUNDED_BULK_READ",
         "severity": "medium",
@@ -69,17 +127,16 @@ violations contains violation if {
     }
 }
 
-table_in_granted_resources(table) if {
-    some granted in input.session.granted_resources
-    endswith(granted, concat(".", ["", table]))
-}
-
 # -------------------------------------------------------------
 # FINAL EVALUATION RESULT
 # -------------------------------------------------------------
-outcome := "DENY" if {
+deny if {
     some v in violations
     v.severity in ["critical", "high"]
+}
+
+outcome := "DENY" if {
+    deny
 } else := "REVIEW" if {
     count(violations) > 0
 } else := "ALLOW"
@@ -88,9 +145,15 @@ allow if {
     count(violations) == 0
 }
 
+authorized if {
+    not deny
+}
+
 result := {
     "outcome": outcome,
     "allow": allow,
+    "deny": deny,
+    "authorized": authorized,
     "violations": [v.rule | some v in violations],
     "violation_details": [v | some v in violations],
     "reasons": [v.reason | some v in violations]

@@ -21,7 +21,7 @@ test_allow_sales_read if {
     decision.deny == false
 }
 
-# Test 2: Require approval for critical resources (salaries)
+# Test 2: Require approval for critical resources (salaries) when requested by Developer
 test_require_approval_critical_salaries if {
     input_doc := {
         "user": {"username": "developer", "roles": ["developer"]},
@@ -41,7 +41,7 @@ test_require_approval_critical_salaries if {
     decision.deny == false
 }
 
-# Test 3: Require approval for DDL when requested by DBA
+# Test 3: Require approval for DDL when requested by DBA (DBA Maintenance Profile)
 test_require_approval_ddl_dba if {
     input_doc := {
         "user": {"username": "dba", "roles": ["dba"]},
@@ -118,4 +118,46 @@ test_deny_duration_cap_exceeded if {
     decision := access.decision with input as input_doc
     decision.action == "deny"
     decision.deny == true
+}
+
+# Test 8: Auto-approve Admin routine profile (Admin Security Administration)
+test_admin_auto_approve_routine_profile if {
+    input_doc := {
+        "user": {"username": "admin", "roles": ["admin"]},
+        "profile": {"name": "Admin Security Administration", "requires_approval": false},
+        "resources": [
+            {"db_name": "FinanceCorpDB", "table_name": "Employees", "sensitivity": "medium"},
+            {"db_name": "FinanceCorpDB", "table_name": "Payroll", "sensitivity": "critical"}
+        ],
+        "operations": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "requested_duration": 60,
+        "time_of_day": "10:00",
+        "sensitivity": "critical"
+    }
+    decision := access.decision with input as input_doc
+    decision.action == "allow"
+    decision.allow == true
+    decision.require_approval == false
+    decision.deny == false
+}
+
+# Test 9: Auto-approve DBA routine profile (DBA Operations Profile)
+test_dba_auto_approve_routine_profile if {
+    input_doc := {
+        "user": {"username": "dba", "roles": ["dba"]},
+        "profile": {"name": "DBA Operations Profile", "requires_approval": false},
+        "resources": [
+            {"db_name": "FinanceCorpDB", "table_name": "Transactions", "sensitivity": "high"},
+            {"db_name": "FinanceCorpDB", "table_name": "Customers", "sensitivity": "medium"}
+        ],
+        "operations": ["SELECT", "INSERT", "UPDATE"],
+        "requested_duration": 120,
+        "time_of_day": "11:00",
+        "sensitivity": "high"
+    }
+    decision := access.decision with input as input_doc
+    decision.action == "allow"
+    decision.allow == true
+    decision.require_approval == false
+    decision.deny == false
 }

@@ -70,28 +70,22 @@ deny_reasons contains reason if {
     "DELETE" in input.operations
     has_critical_resource
     not is_admin
-    reason := "DELETE operations on critical-sensitivity resources are prohibited except by Admin"
+    not is_dba
+    reason := "DELETE operations on critical-sensitivity resources are prohibited except by Admin or DBA with supervisor approval"
 }
 
 deny if {
     count(deny_reasons) > 0
 }
 
+is_dba_routine_profile if {
+    is_dba
+    input.profile.name == "DBA Operations Profile"
+}
+
 # -------------------------------------------------------------
 # REQUIRE APPROVAL RULES (Evaluation priority 2: If not denied)
 # -------------------------------------------------------------
-approval_reasons contains reason if {
-    not deny
-    has_critical_resource
-    reason := "Access involves critical sensitivity resources (e.g. employee compensation/salaries)"
-}
-
-approval_reasons contains reason if {
-    not deny
-    has_high_resource
-    reason := "Access involves high sensitivity resources (e.g. financial transaction records)"
-}
-
 approval_reasons contains reason if {
     not deny
     input.profile.requires_approval == true
@@ -100,9 +94,31 @@ approval_reasons contains reason if {
 
 approval_reasons contains reason if {
     not deny
-    some op in input.operations
-    op in ["UPDATE", "DELETE", "DDL"]
-    reason := sprintf("Request includes modifying operations (%v)", [op])
+    not is_admin
+    has_critical_resource
+    reason := "Access involves critical sensitivity resources (e.g. employee compensation/salaries)"
+}
+
+approval_reasons contains reason if {
+    not deny
+    not is_admin
+    not is_dba_routine_profile
+    has_high_resource
+    reason := "Access involves high sensitivity resources (e.g. financial transaction records)"
+}
+
+approval_reasons contains reason if {
+    not deny
+    not is_admin
+    "DDL" in input.operations
+    reason := "Request includes DDL schema modification operations"
+}
+
+approval_reasons contains reason if {
+    not deny
+    not is_admin
+    "DELETE" in input.operations
+    reason := "Request includes DELETE operations"
 }
 
 require_approval if {

@@ -32,15 +32,7 @@ import {
   FormControlLabel,
   Grid
 } from '@mui/material';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import ShieldIcon from '@mui/icons-material/Shield';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CodeIcon from '@mui/icons-material/Code';
-import PersonIcon from '@mui/icons-material/Person';
-import PolicyIcon from '@mui/icons-material/Policy';
+import BootstrapIcon from '../components/common/BootstrapIcon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function ViolationsPage() {
@@ -124,7 +116,7 @@ export default function ViolationsPage() {
     if (type === 'blocked_by_db') {
       return (
         <Chip
-          icon={<ShieldIcon sx={{ fontSize: '14px !important' }} />}
+          icon={<BootstrapIcon name="bi-shield-x" size={13} />}
           label="BLOCKED PRE-EXEC (DB)"
           color="success"
           variant="outlined"
@@ -135,7 +127,7 @@ export default function ViolationsPage() {
     }
     return (
       <Chip
-        icon={<WarningAmberIcon sx={{ fontSize: '14px !important' }} />}
+        icon={<BootstrapIcon name="bi-exclamation-triangle" size={13} />}
         label="DETECTED POST-HOC"
         color="warning"
         variant="outlined"
@@ -176,7 +168,7 @@ export default function ViolationsPage() {
           />
           <Button
             variant="outlined"
-            startIcon={<RefreshIcon />}
+            startIcon={<BootstrapIcon name="bi-arrow-clockwise" size={15} />}
             onClick={() => {
               setLoading(true);
               fetchViolations();
@@ -330,6 +322,7 @@ export default function ViolationsPage() {
         <Table size="small">
           <TableHead sx={{ bgcolor: 'rgba(255,255,255,0.03)' }}>
             <TableRow>
+              <TableCell sx={{ fontWeight: 600 }}>Event ID</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Timestamp</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Rule Violated</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>Severity</TableCell>
@@ -343,7 +336,7 @@ export default function ViolationsPage() {
           <TableBody>
             {loading && violations.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
                   <CircularProgress size={32} />
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     Evaluating policy streams...
@@ -352,7 +345,7 @@ export default function ViolationsPage() {
               </TableRow>
             ) : violations.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
                   <Typography variant="body2" color="text.secondary">
                     No policy violations found matching current criteria.
                   </Typography>
@@ -368,6 +361,15 @@ export default function ViolationsPage() {
 
                 return (
                   <TableRow key={violation.id} hover sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                    <TableCell>
+                      <Chip
+                        label={`#${violation.event_id || violation.id}`}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.7rem', height: 20 }}
+                      />
+                    </TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'text.secondary' }}>
                       {dateStr}
                     </TableCell>
@@ -388,7 +390,7 @@ export default function ViolationsPage() {
                     <TableCell>
                       {violation.username ? (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <PersonIcon sx={{ fontSize: 16, color: 'primary.light' }} />
+                          <BootstrapIcon name="bi-person-circle" size={15} color="#55E6C1" />
                           <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem' }}>
                             {violation.username}
                           </Typography>
@@ -413,7 +415,7 @@ export default function ViolationsPage() {
                         sx={{
                           fontFamily: 'monospace',
                           fontSize: '0.75rem',
-                          color: '#90caf9',
+                          color: '#55E6C1',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap'
@@ -423,8 +425,8 @@ export default function ViolationsPage() {
                       </Typography>
                     </TableCell>
                     <TableCell align="center">
-                      <IconButton size="small" onClick={() => setSelectedViolation(violation)} color="primary">
-                        <CodeIcon fontSize="small" />
+                      <IconButton size="small" onClick={() => setSelectedViolation(violation)} color="primary" aria-label="View Violation SQL">
+                        <BootstrapIcon name="bi-search" size={14} />
                       </IconButton>
                     </TableCell>
                   </TableRow>
@@ -444,7 +446,7 @@ export default function ViolationsPage() {
       >
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <PolicyIcon color="error" />
+            <BootstrapIcon name="bi-shield-x" size={18} color="#EF4444" />
             <Typography variant="h6">Policy Violation #{selectedViolation?.id}</Typography>
           </Box>
           <Stack direction="row" spacing={1}>
@@ -455,30 +457,36 @@ export default function ViolationsPage() {
         <DialogContent dividers>
           {selectedViolation && (
             <Stack spacing={2.5}>
-              <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1.5 }}>
+              <Box sx={{ p: 2, bgcolor: '#171B1C', border: '1px solid #364345', borderRadius: 1.5 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, color: 'primary.light' }}>
                   Violation Metadata
                 </Typography>
                 <Grid container spacing={2}>
-                  <Grid item xs={6} sm={3}>
+                  <Grid item xs={6} sm={2.4}>
+                    <Typography variant="caption" color="text.secondary">Canonical Event</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'primary.light' }}>
+                      Event #{selectedViolation.event_id || selectedViolation.id}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} sm={2.4}>
                     <Typography variant="caption" color="text.secondary">Rule ID</Typography>
                     <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
                       {selectedViolation.rule}
                     </Typography>
                   </Grid>
-                  <Grid item xs={6} sm={3}>
+                  <Grid item xs={6} sm={2.4}>
                     <Typography variant="caption" color="text.secondary">Triggered By</Typography>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {selectedViolation.username ? `${selectedViolation.full_name} (${selectedViolation.username})` : 'Unattributed'}
+                      {selectedViolation.username ? `${selectedViolation.full_name || selectedViolation.username}` : 'Unattributed'}
                     </Typography>
                   </Grid>
-                  <Grid item xs={6} sm={3}>
+                  <Grid item xs={6} sm={2.4}>
                     <Typography variant="caption" color="text.secondary">Session Context</Typography>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {selectedViolation.session_id ? `JIT Session #${selectedViolation.session_id}` : 'None'}
                     </Typography>
                   </Grid>
-                  <Grid item xs={6} sm={3}>
+                  <Grid item xs={6} sm={2.4}>
                     <Typography variant="caption" color="text.secondary">MySQL Username</Typography>
                     <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
                       {selectedViolation.mysql_username}
@@ -503,7 +511,7 @@ export default function ViolationsPage() {
                   </Typography>
                   <Button
                     size="small"
-                    startIcon={copiedRaw ? <CheckCircleIcon color="success" /> : <ContentCopyIcon />}
+                    startIcon={copiedRaw ? <BootstrapIcon name="bi-check-circle-fill" size={14} color="#10B981" /> : <BootstrapIcon name="bi-clipboard" size={14} />}
                     onClick={() => handleCopyRaw(selectedViolation.raw_sql)}
                   >
                     {copiedRaw ? 'Copied' : 'Copy Query'}
@@ -512,11 +520,11 @@ export default function ViolationsPage() {
                 <Paper
                   sx={{
                     p: 2,
-                    bgcolor: '#0a0d12',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    bgcolor: '#171B1C',
+                    border: '1px solid #364345',
                     fontFamily: 'monospace',
                     fontSize: '0.85rem',
-                    color: '#90caf9',
+                    color: '#55E6C1',
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-all'
                   }}

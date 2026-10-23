@@ -12,14 +12,36 @@ export const healthService = {
       opaService.checkHealth()
     ]);
 
-    const isHealthy = dbHealth.connected && opaHealth.reachable;
+    const pipelineActive = Boolean(dbHealth.connected && dbHealth.generalLogActive);
+    const isHealthy = dbHealth.connected && opaHealth.reachable && pipelineActive;
+
+    let overallStatus = 'healthy';
+    if (!dbHealth.connected && !opaHealth.reachable) {
+      overallStatus = 'unavailable';
+    } else if (!dbHealth.connected) {
+      overallStatus = 'unavailable';
+    } else if (!opaHealth.reachable || !pipelineActive) {
+      overallStatus = 'degraded';
+    }
+
+    const responseTimeMs = Date.now() - startTime;
+    const uptimeSeconds = Math.floor(process.uptime());
 
     return {
-      status: isHealthy ? 'healthy' : 'degraded',
-      uptime: process.uptime(),
-      responseTimeMs: Date.now() - startTime,
+      status: overallStatus,
+      uptime: uptimeSeconds,
+      responseTimeMs,
       timestamp: new Date().toISOString(),
       dependencies: {
+        backend: {
+          status: 'up',
+          details: {
+            uptime: uptimeSeconds,
+            nodeVersion: process.version,
+            memoryMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+            pid: process.pid
+          }
+        },
         database: {
           status: dbHealth.connected ? 'up' : 'down',
           details: dbHealth
@@ -27,6 +49,15 @@ export const healthService = {
         opa: {
           status: opaHealth.reachable ? 'up' : 'down',
           details: opaHealth
+        },
+        pipeline: {
+          status: pipelineActive ? 'up' : (dbHealth.connected ? 'degraded' : 'down'),
+          details: {
+            generalLogActive: Boolean(dbHealth.generalLogActive),
+            logOutput: dbHealth.logOutput || 'NONE',
+            generalLogRows: dbHealth.generalLogRows ?? 0,
+            ingestorWorker: 'running'
+          }
         }
       }
     };

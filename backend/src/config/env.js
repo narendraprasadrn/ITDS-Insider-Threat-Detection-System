@@ -18,8 +18,8 @@ export const env = {
     PORT: parseInt(process.env.DB_PORT, 10) || 3306,
     USER: process.env.DB_USER || 'itds_admin',
     PASSWORD: process.env.DB_PASSWORD || 'ItdsAdminPass123!',
-    NAME: process.env.DB_NAME || 'itds_app',
-    TARGET_NAME: process.env.TARGET_DB_NAME || 'FinanceCorpDB',
+    NAME: process.env.DB_NAME || 'itds_db',
+    TARGET_NAME: process.env.TARGET_DB_NAME || 'itds_db',
     CONNECTION_LIMIT: parseInt(process.env.DB_CONNECTION_LIMIT, 10) || 10
   },
   

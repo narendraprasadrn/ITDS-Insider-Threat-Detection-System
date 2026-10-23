@@ -11,150 +11,201 @@ import {
   Divider,
   Box,
   Typography,
-  Chip
+  Chip,
+  Tooltip,
+  Avatar
 } from '@mui/material';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import LockOpenIcon from '@mui/icons-material/LockOpen';
-import StorageIcon from '@mui/icons-material/Storage';
-import RuleIcon from '@mui/icons-material/Rule';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import WarningIcon from '@mui/icons-material/Warning';
-import HealthAndSafetyIcon from '@mui/icons-material/HealthAndSafety';
-import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
-import PolicyIcon from '@mui/icons-material/Policy';
-import TerminalIcon from '@mui/icons-material/Terminal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
+import BootstrapIcon from '../common/BootstrapIcon.jsx';
 
-const DRAWER_WIDTH = 260;
+export const EXPANDED_DRAWER_WIDTH = 250;
+export const COLLAPSED_DRAWER_WIDTH = 68;
+export const DRAWER_WIDTH = EXPANDED_DRAWER_WIDTH;
 
-export default function Sidebar({ open, onClose, variant = 'permanent' }) {
+export default function Sidebar({
+  isMobile = false,
+  mobileOpen = false,
+  onMobileClose,
+  collapsed = false
+}) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
 
   const userRoles = user?.roles || [];
   const isAdmin = userRoles.includes('admin');
-  const isAdminOrDba = userRoles.includes('admin') || userRoles.includes('dba');
 
+  // Unified enterprise menu with strict icon and role mapping
   const menuItems = [
-    { text: 'Security Console', icon: <DashboardIcon />, path: '/', active: true, phase: 'Phase 9', roles: ['admin', 'dba'] },
-    {
-      text: 'User & RBAC',
-      icon: <AdminPanelSettingsIcon />,
-      path: '/users',
-      active: true,
-      phase: 'Phase 2',
-      roles: ['admin']
-    },
-    { text: 'Access Profiles', icon: <StorageIcon />, path: '/profiles', active: true, phase: 'Phase 3' },
-    { text: 'OPA Policies', icon: <RuleIcon />, path: '/policies', active: true, phase: 'Phase 4' },
-    { text: 'JIT Sessions', icon: <LockOpenIcon />, path: '/sessions', active: true, phase: 'Phase 5' },
-    { text: 'SQL Workspace', icon: <TerminalIcon />, path: '/workspace', active: true, phase: 'Phase 5' },
-    { text: 'SQL Activity Log', icon: <VisibilityIcon />, path: '/sql-events', active: true, phase: 'Phase 6', roles: ['admin', 'dba'] },
-    { text: 'Policy Violations', icon: <PolicyIcon />, path: '/violations', active: true, phase: 'Phase 7', roles: ['admin', 'dba'] },
-    { text: 'Threat & Risk Feed', icon: <WarningIcon />, path: '/threats', active: true, phase: 'Phase 8', roles: ['admin', 'dba'] }
+    { text: 'Security Console', iconName: 'bi-grid-1x2-fill', path: '/', active: true, roles: ['admin', 'dba'] },
+    { text: 'User & RBAC', iconName: 'bi-people-fill', path: '/users', active: true, roles: ['admin'] },
+    { text: 'Access Profiles', iconName: 'bi-database-lock', path: '/profiles', active: true },
+    { text: 'OPA Policies', iconName: 'bi-shield-check', path: '/policies', active: true, roles: ['admin'] },
+    { text: 'JIT Sessions', iconName: 'bi-key-fill', path: '/sessions', active: true },
+    { text: 'SQL Workspace', iconName: 'bi-terminal', path: '/workspace', active: true },
+    { text: 'SQL Activity Log', iconName: 'bi-journal-text', path: '/sql-events', active: true, roles: ['admin', 'dba'] },
+    { text: 'Security Monitoring', iconName: 'bi-activity', path: '/monitoring', active: true, roles: ['admin', 'dba'] }
   ];
+
+  const currentWidth = isMobile
+    ? EXPANDED_DRAWER_WIDTH
+    : (collapsed ? COLLAPSED_DRAWER_WIDTH : EXPANDED_DRAWER_WIDTH);
 
   return (
     <Drawer
-      variant={variant}
-      open={open}
-      onClose={onClose}
+      variant={isMobile ? 'temporary' : 'permanent'}
+      open={isMobile ? mobileOpen : true}
+      onClose={onMobileClose}
+      ModalProps={{
+        keepMounted: true // Optimized mobile drawer performance
+      }}
       sx={{
-        width: DRAWER_WIDTH,
+        width: currentWidth,
         flexShrink: 0,
+        whiteSpace: 'nowrap',
+        boxSizing: 'border-box',
         [`& .MuiDrawer-paper`]: {
-          width: DRAWER_WIDTH,
-          boxSizing: 'border-box'
+          width: currentWidth,
+          boxSizing: 'border-box',
+          backgroundColor: '#1F292B',
+          borderRight: '1px solid #364345',
+          overflowX: 'hidden',
+          transition: (theme) => theme.transitions.create('width', {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen
+          })
         }
       }}
     >
-      <Toolbar />
-      <Box sx={{ p: 2 }}>
-        <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1.2 }}>
-          Navigation Shell
-        </Typography>
-        {isAuthenticated && (
-          <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(255, 255, 255, 0.03)', borderRadius: 1.5 }}>
-            <Typography variant="caption" color="text.secondary" display="block">
-              Logged in as:
-            </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {user?.username}
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
-              {userRoles.map((r) => (
-                <Chip
-                  key={r}
-                  label={r}
-                  size="small"
-                  color={r === 'admin' ? 'error' : r === 'dba' ? 'info' : 'primary'}
-                  sx={{ height: 18, fontSize: '0.65rem' }}
-                />
-              ))}
-            </Box>
-          </Box>
-        )}
-      </Box>
-      <Divider />
-      <List sx={{ px: 1 }}>
-        {menuItems.map((item) => {
-          if (item.roles && !item.roles.some(r => userRoles.includes(r))) return null;
-          if (item.adminOnly && !isAdmin) return null;
-          const isCurrent = location.pathname === item.path;
-          return (
-            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton
-                selected={isCurrent}
-                onClick={() => navigate(item.path)}
-                disabled={!item.active && !isCurrent}
+      <Toolbar sx={{ minHeight: '56px !important' }} />
+
+      {/* User info status box */}
+      {isAuthenticated && (
+        collapsed ? (
+          <Tooltip title={`Logged in as ${user?.username} (${userRoles.join(', ')})`} placement="right" arrow>
+            <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+              <Avatar
                 sx={{
-                  borderRadius: 1.5,
-                  '&.Mui-selected': {
-                    backgroundColor: 'rgba(2, 136, 209, 0.16)',
-                    color: 'primary.light',
-                    '&:hover': {
-                      backgroundColor: 'rgba(2, 136, 209, 0.24)'
-                    }
-                  }
+                  width: 34,
+                  height: 34,
+                  bgcolor: 'rgba(85, 230, 193, 0.15)',
+                  color: '#55E6C1',
+                  border: '1px solid rgba(85, 230, 193, 0.35)',
+                  fontSize: '0.8rem',
+                  fontWeight: 700
                 }}
               >
-                <ListItemIcon sx={{ color: isCurrent ? 'primary.light' : 'text.secondary', minWidth: 40 }}>
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText
-                  primary={item.text}
-                  primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: isCurrent ? 600 : 400 }}
-                />
-                {!item.active ? (
+                {user?.username ? user.username.slice(0, 2).toUpperCase() : 'U'}
+              </Avatar>
+            </Box>
+          </Tooltip>
+        ) : (
+          <Box sx={{ p: 2 }}>
+            <Box sx={{ p: 1.25, bgcolor: '#171B1C', border: '1px solid #364345', borderRadius: 1.5 }}>
+              <Typography variant="caption" sx={{ color: '#AAB8BC', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }} display="block">
+                Active Persona
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: '#F5F7F7', mt: 0.25 }}>
+                {user?.username}
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 0.5, mt: 0.75, flexWrap: 'wrap' }}>
+                {userRoles.map((r) => (
                   <Chip
-                    label={item.phase}
+                    key={r}
+                    label={r.toUpperCase()}
                     size="small"
-                    sx={{ height: 20, fontSize: '0.65rem', backgroundColor: 'rgba(255,255,255,0.06)' }}
+                    color={r === 'admin' ? 'error' : r === 'dba' ? 'info' : 'primary'}
+                    sx={{ height: 18, fontSize: '0.62rem', fontWeight: 700 }}
                   />
-                ) : (
-                  item.adminOnly && (
-                    <Chip
-                      label="Admin"
-                      size="small"
-                      color="error"
-                      variant="outlined"
-                      sx={{ height: 18, fontSize: '0.6rem' }}
+                ))}
+              </Box>
+            </Box>
+          </Box>
+        )
+      )}
+
+      <Divider sx={{ borderColor: '#364345' }} />
+
+      {/* Navigation List */}
+      <List sx={{ px: collapsed ? 0.75 : 1.25, pt: 1.25 }}>
+        {menuItems.map((item) => {
+          // Strictly enforce role-based navigation visibility
+          if (item.roles && !item.roles.some(r => userRoles.includes(r))) return null;
+          if (item.adminOnly && !isAdmin) return null;
+          const isCurrent = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
+
+          return (
+            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+              <Tooltip title={collapsed ? item.text : ''} placement="right" arrow disableHoverListener={!collapsed}>
+                <ListItemButton
+                  selected={isCurrent}
+                  onClick={() => {
+                    navigate(item.path);
+                    if (isMobile && onMobileClose) onMobileClose();
+                  }}
+                  sx={{
+                    borderRadius: 1.5,
+                    borderLeft: isCurrent ? '3px solid #55E6C1' : '3px solid transparent',
+                    px: collapsed ? 1 : 1.5,
+                    justifyContent: collapsed ? 'center' : 'initial',
+                    minHeight: 42,
+                    '&.Mui-selected': {
+                      backgroundColor: '#243D37',
+                      color: '#55E6C1',
+                      '&:hover': {
+                        backgroundColor: 'rgba(36, 61, 55, 0.85)'
+                      }
+                    },
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.04)'
+                    }
+                  }}
+                >
+                  <ListItemIcon
+                    sx={{
+                      color: isCurrent ? '#55E6C1' : '#AAB8BC',
+                      minWidth: collapsed ? 0 : 34,
+                      mr: collapsed ? 0 : 1,
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <BootstrapIcon name={item.iconName} size={17} />
+                  </ListItemIcon>
+                  {!collapsed && (
+                    <ListItemText
+                      primary={item.text}
+                      primaryTypographyProps={{
+                        fontSize: '0.85rem',
+                        fontWeight: isCurrent ? 700 : 500,
+                        color: isCurrent ? '#55E6C1' : '#F5F7F7',
+                        noWrap: true
+                      }}
                     />
-                  )
-                )}
-              </ListItemButton>
+                  )}
+                </ListItemButton>
+              </Tooltip>
             </ListItem>
           );
         })}
       </List>
-      <Box sx={{ mt: 'auto', p: 2 }}>
-        <Typography variant="caption" color="text.secondary" display="block">
-          Role-Based Access Control Active
-        </Typography>
+
+      {/* Footer Branding Status */}
+      <Box sx={{ mt: 'auto', p: collapsed ? 1.5 : 2, textAlign: collapsed ? 'center' : 'left' }}>
+        {collapsed ? (
+          <Tooltip title="Zero Trust Security Architecture" placement="right" arrow>
+            <Box sx={{ display: 'inline-flex', color: '#55E6C1' }}>
+              <BootstrapIcon name="bi-shield-check" size={16} />
+            </Box>
+          </Tooltip>
+        ) : (
+          <Typography variant="caption" sx={{ color: '#64748B', display: 'flex', alignItems: 'center', gap: 0.75, fontSize: '0.72rem' }}>
+            <BootstrapIcon name="bi-shield-check" size={13} color="#55E6C1" />
+            Zero-Trust RBAC Enforced
+          </Typography>
+        )}
       </Box>
     </Drawer>
   );
 }
-export { DRAWER_WIDTH };
