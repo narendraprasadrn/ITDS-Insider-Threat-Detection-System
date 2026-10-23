@@ -28,8 +28,8 @@ const PRESETS = [
     name: '1. Standard Read (Allow)',
     input: {
       user: { username: 'developer', roles: ['developer'] },
-      profile: { name: 'Sales & Customer Read-Only', requires_approval: false },
-      resources: [{ db_name: 'target_db', table_name: 'customers', sensitivity: 'low' }],
+      profile: { name: 'Developer Read Profile', requires_approval: false },
+      resources: [{ db_name: 'FinanceCorpDB', table_name: 'Customers', sensitivity: 'low' }],
       operations: ['SELECT'],
       requested_duration: 60,
       time_of_day: '11:00',
@@ -40,10 +40,10 @@ const PRESETS = [
     name: '2. Critical Payroll (Require Approval)',
     input: {
       user: { username: 'developer', roles: ['developer'] },
-      profile: { name: 'HR Payroll Read', requires_approval: true },
+      profile: { name: 'Executive Payroll & Compensation', requires_approval: true },
       resources: [
-        { db_name: 'target_db', table_name: 'employees', sensitivity: 'medium' },
-        { db_name: 'target_db', table_name: 'salaries', sensitivity: 'critical' }
+        { db_name: 'FinanceCorpDB', table_name: 'Employees', sensitivity: 'medium' },
+        { db_name: 'FinanceCorpDB', table_name: 'Payroll', sensitivity: 'critical' }
       ],
       operations: ['SELECT'],
       requested_duration: 45,
@@ -55,20 +55,20 @@ const PRESETS = [
     name: '3. Developer DDL Request (Deny)',
     input: {
       user: { username: 'developer', roles: ['developer'] },
-      profile: { name: 'Schema Alterations', requires_approval: false },
-      resources: [{ db_name: 'target_db', table_name: 'orders', sensitivity: 'medium' }],
+      profile: { name: 'Developer Work Profile', requires_approval: false },
+      resources: [{ db_name: 'FinanceCorpDB', table_name: 'Orders', sensitivity: 'low' }],
       operations: ['SELECT', 'DDL'],
       requested_duration: 30,
       time_of_day: '12:00',
-      sensitivity: 'medium'
+      sensitivity: 'low'
     }
   },
   {
     name: '4. Off-Hours Sensitive Read (Deny)',
     input: {
       user: { username: 'developer', roles: ['developer'] },
-      profile: { name: 'Financial Audit', requires_approval: true },
-      resources: [{ db_name: 'target_db', table_name: 'payments', sensitivity: 'high' }],
+      profile: { name: 'Financial Audit & Tax Reporting', requires_approval: true },
+      resources: [{ db_name: 'FinanceCorpDB', table_name: 'Transactions', sensitivity: 'high' }],
       operations: ['SELECT'],
       requested_duration: 60,
       time_of_day: '23:15',
@@ -266,6 +266,32 @@ export default function PoliciesPage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Live End-to-End Policy Governance Banner */}
+      <Card sx={{ mt: 3, borderLeft: '4px solid #ab47bc' }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <RuleIcon color="secondary" /> Live End-to-End Policy Governance in Production
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                OPA and Rego policies are executed live in both:
+                (1) <b>Access Request Pipeline</b> (<code>/access-requests</code>) to decide between Auto-Approve, Pending Admin Queue, or Deny.
+                (2) <b>In-App SQL Workspace</b> (<code>/workspace</code>) to pre-emptively inspect queries and block unauthorized operations before database execution.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1.5}>
+              <Button variant="outlined" color="secondary" onClick={() => window.location.href = '/sessions'}>
+                View JIT Requests
+              </Button>
+              <Button variant="contained" color="secondary" onClick={() => window.location.href = '/workspace'}>
+                Open SQL Workspace
+              </Button>
+            </Stack>
+          </Box>
+        </CardContent>
+      </Card>
     </Box>
   );
 }

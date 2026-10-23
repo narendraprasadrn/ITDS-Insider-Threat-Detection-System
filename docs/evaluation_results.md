@@ -1,18 +1,18 @@
 # Insider Threat Detection System - Evaluation Results
 
-**Evaluation Date:** 2026-10-23T04:57:24.312Z
-**Total Execution Time:** 22.91 seconds
+**Evaluation Date:** 2026-10-23T05:19:53.117Z
+**Total Execution Time:** 22.89 seconds
 **Target System:** MySQL 8 with Server-Side `general_log` Auditing & Open Policy Agent (OPA)
 
 ## 1. Scenario Detection Evaluation Summary
 
 | ID | Scenario | Description | Queries | Violations | Risk Score | Risk Level | Alert Raised? | Time-to-Detect | Status |
 |:---:|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **A** | **Normal Analyst Day** | Compliant SELECTs with WHERE and LIMIT filters | 3 | 0 | **0/100** | `LOW` | ✅ NO | 4282ms | ✅ **PASS** |
-| **B** | **Data Exfiltration Attack** | Mass SELECT * dumps without LIMIT/WHERE and velocity spike | 7 | 8 | **80/100** | `CRITICAL` | 🚨 **YES** | 4891ms | ✅ **PASS** |
-| **C** | **Privilege Probing & Reconnaissance** | Unauthorized DELETE/DDL attempts and cross-schema metadata enumeration | 6 | 11 | **100/100** | `CRITICAL` | 🚨 **YES** | 4788ms | ✅ **PASS** |
-| **D** | **Off-Hours Payroll Access** | Bulk dump of sensitive salaries table executed outside authorized work hours | 5 | 2 | **100/100** | `CRITICAL` | 🚨 **YES** | 4698ms | ✅ **PASS** |
-| **E** | **Credential Sharing / Unattributed Use** | Direct SQL execution bypassing JIT governance and session attribution | 4 | 8 | **60/100** | `HIGH` | 🚨 **YES** | 4155ms | ✅ **PASS** |
+| **A** | **Normal Analyst Day** | Compliant SELECTs with WHERE and LIMIT filters | 3 | 0 | **0/100** | `LOW` | ✅ NO | 4277ms | ✅ **PASS** |
+| **B** | **Data Exfiltration Attack** | Mass SELECT * dumps without LIMIT/WHERE and velocity spike | 7 | 8 | **80/100** | `CRITICAL` | 🚨 **YES** | 4875ms | ✅ **PASS** |
+| **C** | **Privilege Probing & Reconnaissance** | Unauthorized DELETE/DDL attempts and cross-schema metadata enumeration | 6 | 11 | **100/100** | `CRITICAL` | 🚨 **YES** | 4799ms | ✅ **PASS** |
+| **D** | **Off-Hours Payroll Access** | Bulk dump of sensitive salaries table executed outside authorized work hours | 5 | 2 | **100/100** | `CRITICAL` | 🚨 **YES** | 4690ms | ✅ **PASS** |
+| **E** | **Credential Sharing / Unattributed Use** | Direct SQL execution bypassing JIT governance and session attribution | 4 | 8 | **60/100** | `HIGH` | 🚨 **YES** | 4115ms | ✅ **PASS** |
 
 ## 2. Detection Rule Trigger Breakdown
 
@@ -22,7 +22,7 @@
 - **Policy Violations Flagged:** 0
 - **Risk Score Assigned:** 0/100 (LOW)
 - **Fired Threat Detectors:** `None (Compliant)`
-- **Detection Latency:** 4282ms from query execution to risk assessment
+- **Detection Latency:** 4277ms from query execution to risk assessment
 
 ### Scenario B: Data Exfiltration Attack
 - **Primary Objective:** Mass SELECT * dumps without LIMIT/WHERE and velocity spike
@@ -30,7 +30,7 @@
 - **Policy Violations Flagged:** 8
 - **Risk Score Assigned:** 80/100 (CRITICAL)
 - **Fired Threat Detectors:** `high_query_velocity, bulk_export, out_of_profile_table`
-- **Detection Latency:** 4891ms from query execution to risk assessment
+- **Detection Latency:** 4875ms from query execution to risk assessment
 
 ### Scenario C: Privilege Probing & Reconnaissance
 - **Primary Objective:** Unauthorized DELETE/DDL attempts and cross-schema metadata enumeration
@@ -38,7 +38,7 @@
 - **Policy Violations Flagged:** 11
 - **Risk Score Assigned:** 100/100 (CRITICAL)
 - **Fired Threat Detectors:** `high_query_velocity, bulk_export, out_of_profile_table, rapid_failed_queries, cross_schema_read`
-- **Detection Latency:** 4788ms from query execution to risk assessment
+- **Detection Latency:** 4799ms from query execution to risk assessment
 
 ### Scenario D: Off-Hours Payroll Access
 - **Primary Objective:** Bulk dump of sensitive salaries table executed outside authorized work hours
@@ -46,7 +46,7 @@
 - **Policy Violations Flagged:** 2
 - **Risk Score Assigned:** 100/100 (CRITICAL)
 - **Fired Threat Detectors:** `high_query_velocity, bulk_export, off_hours_activity, out_of_profile_table`
-- **Detection Latency:** 4698ms from query execution to risk assessment
+- **Detection Latency:** 4690ms from query execution to risk assessment
 
 ### Scenario E: Credential Sharing / Unattributed Use
 - **Primary Objective:** Direct SQL execution bypassing JIT governance and session attribution
@@ -54,7 +54,7 @@
 - **Policy Violations Flagged:** 8
 - **Risk Score Assigned:** 60/100 (HIGH)
 - **Fired Threat Detectors:** `unattributed_account_use, unauthorized_ddl`
-- **Detection Latency:** 4155ms from query execution to risk assessment
+- **Detection Latency:** 4115ms from query execution to risk assessment
 
 ## 3. Analysis & Key Findings
 

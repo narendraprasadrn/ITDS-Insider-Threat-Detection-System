@@ -14,6 +14,7 @@ import sqlEventRoutes from './routes/sqlEvent.routes.js';
 import violationRoutes from './routes/violation.routes.js';
 import riskRoutes from './routes/risk.routes.js';
 import sseRoutes from './routes/sse.routes.js';
+import workspaceRoutes from './routes/workspace.routes.js';
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.use('/profiles', profileRoutes);
 app.use('/policy', policyRoutes);
 app.use('/access-requests', accessRequestRoutes);
 app.use('/sessions', sessionRoutes);
+app.use('/workspace', workspaceRoutes);
 app.use('/sql-events', sqlEventRoutes);
 app.use('/violations', violationRoutes);
 app.use('/stream', sseRoutes);

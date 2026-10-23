@@ -13,10 +13,41 @@ export const accessRequestController = {
         req
       });
 
-      const statusCode = result.status === 'approved' ? 201 : 200;
+      const statusCode = result.status === 'active' || result.status === 'approved' ? 201 : 200;
       res.status(statusCode).json({
         success: true,
         data: result
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async listRequests(req, res, next) {
+    try {
+      const { status, limit, offset } = req.query;
+      const requests = await accessRequestService.listRequests({
+        user: req.user,
+        status,
+        limit,
+        offset
+      });
+
+      res.status(200).json({
+        success: true,
+        data: { requests }
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getRequestById(req, res, next) {
+    try {
+      const request = await accessRequestService.getRequestById(req.params.id, req.user);
+      res.status(200).json({
+        success: true,
+        data: { request }
       });
     } catch (err) {
       next(err);

@@ -1,5 +1,6 @@
 // frontend/src/pages/SessionsPage.jsx
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -46,19 +47,25 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import TimerIcon from '@mui/icons-material/Timer';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import StorageIcon from '@mui/icons-material/Storage';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import HistoryIcon from '@mui/icons-material/History';
+import RuleIcon from '@mui/icons-material/Rule';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function SessionsPage() {
   const { user, accessToken, hasRole } = useAuth();
+  const navigate = useNavigate();
   const isAdminOrDba = hasRole('admin') || hasRole('dba');
 
   const [currentTab, setCurrentTab] = useState(0);
   const [availableProfiles, setAvailableProfiles] = useState([]);
   const [mySessions, setMySessions] = useState([]);
+  const [allRequests, setAllRequests] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [actionSuccess, setActionSuccess] = useState(null);
 
   // Request Access Dialog
   const [openRequestDialog, setOpenRequestDialog] = useState(false);
@@ -105,9 +112,16 @@ export default function SessionsPage() {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const mySessData = await mySessRes.json();
-      if (mySessRes.ok && mySessData.success) setMySessions(mySessData.data.sessions);
+      if (mySessRes.ok && mySessData.success) setMySessions(mySessData.data.sessions || []);
 
-      // 3. Admin queues
+      // 3. Fetch persistent access requests (Developer gets own; Admin/DBA gets all)
+      const reqRes = await fetch('/api/access-requests', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const reqData = await reqRes.json();
+      if (reqRes.ok && reqData.success) setAllRequests(reqData.data.requests || []);
+
+      // 4. Admin queues
       if (isAdminOrDba) {
         const [pendRes, actRes] = await Promise.all([
           fetch('/api/access-requests/pending', { headers: { Authorization: `Bearer ${accessToken}` } }),
@@ -115,8 +129,10 @@ export default function SessionsPage() {
         ]);
         const pendData = await pendRes.json();
         const actData = await actRes.json();
-        if (pendRes.ok && pendData.success) setPendingRequests(pendData.data.requests);
-        if (actRes.ok && actData.success) setActiveSessions(actData.data.sessions);
+        if (pendRes.ok && pendData.success) setPendingRequests(pendData.data.requests || []);
+        if (actRes.ok && actData.success) {
+          setActiveSessions(actData.data.sessions || actData.data.active_sessions || []);
+        }
       }
     } catch (err) {
       console.error('Error refreshing sessions data:', err);
@@ -136,6 +152,7 @@ export default function SessionsPage() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    setActionSuccess(null);
 
     try {
       const res = await fetch('/api/access-requests', {
@@ -155,13 +172,17 @@ export default function SessionsPage() {
       setOpenRequestDialog(false);
       setRequestForm({ profile_id: availableProfiles[0]?.id || '', requested_duration_minutes: 60, justification: '' });
 
-      // If auto-approved with credentials, show modal immediately!
-      if (data.data.status === 'approved' && data.data.credentials) {
+      if (data.data.status === 'active' && data.data.credentials) {
         setCredentialsModal({
           open: true,
           credentials: data.data.credentials,
           showPass: false
         });
+        setActionSuccess(`Access request #${data.data.requestId} auto-approved by OPA policy and activated!`);
+      } else if (data.data.status === 'pending') {
+        setActionSuccess(`Access request #${data.data.requestId} submitted: Awaiting Administrator/DBA approval.`);
+      } else if (data.data.status === 'denied') {
+        setError(`Access request denied by policy: ${data.data.decision?.reasons?.join(', ')}`);
       }
 
       fetchData();
@@ -189,6 +210,7 @@ export default function SessionsPage() {
       }
 
       setDecisionDialog({ open: false, requestId: null, type: 'approve', comments: '' });
+      setActionSuccess(`Request #${requestId} successfully ${type === 'approve' ? 'approved and activated' : 'denied'}.`);
 
       if (type === 'approve' && data.data.credentials) {
         setCredentialsModal({
@@ -210,6 +232,7 @@ export default function SessionsPage() {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}` }
       });
+      setActionSuccess(`Session #${sessionId} was revoked and MySQL user dropped.`);
       fetchData();
     } catch (err) {
       console.error(err);
@@ -220,18 +243,37 @@ export default function SessionsPage() {
     navigator.clipboard.writeText(text);
   };
 
+  const getStatusChipColor = (st) => {
+    switch (st) {
+      case 'active': return 'success';
+      case 'pending': return 'warning';
+      case 'approved': return 'info';
+      case 'denied': return 'error';
+      case 'revoked': return 'error';
+      default: return 'default';
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>
-            Just-In-Time (JIT) Access Sessions
+            Just-In-Time (JIT) Access Sessions & Requests
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Least-privilege ephemeral MySQL users (<code>jit_&lt;id&gt;_&lt;rand&gt;</code>) with automated expiry & auditing.
+            Role-governed ephemeral MySQL accounts (<code>jit_&lt;id&gt;_&lt;rand&gt;</code>) with automated lifecycle, OPA decisions & in-app workspace.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button
+            startIcon={<TerminalIcon />}
+            variant="outlined"
+            size="small"
+            onClick={() => navigate('/workspace')}
+          >
+            Open SQL Workspace
+          </Button>
           <Button
             startIcon={<RefreshIcon />}
             variant="outlined"
@@ -252,7 +294,8 @@ export default function SessionsPage() {
         </Box>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+      {actionSuccess && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setActionSuccess(null)}>{actionSuccess}</Alert>}
 
       <Tabs
         value={currentTab}
@@ -260,6 +303,14 @@ export default function SessionsPage() {
         sx={{ mb: 3, borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}
       >
         <Tab label={`My Sessions (${mySessions.length})`} />
+        <Tab
+          label={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <span>Access Request Lifecycle</span>
+              <Chip label={allRequests.length} size="small" color="default" sx={{ height: 18 }} />
+            </Box>
+          }
+        />
         {isAdminOrDba && (
           <Tab
             label={
@@ -305,7 +356,7 @@ export default function SessionsPage() {
                       <Chip
                         size="small"
                         label={s.status.toUpperCase()}
-                        color={s.status === 'active' ? 'success' : s.status === 'revoked' ? 'error' : 'default'}
+                        color={getStatusChipColor(s.status)}
                       />
                     }
                   />
@@ -314,7 +365,7 @@ export default function SessionsPage() {
                       APPROVED OPERATIONS
                     </Typography>
                     <Stack direction="row" spacing={0.5} sx={{ mb: 1.5 }}>
-                      {s.granted_operations.map(op => (
+                      {(s.granted_operations || []).map(op => (
                         <Chip key={op} label={op} size="small" variant="filled" color="primary" />
                       ))}
                     </Stack>
@@ -323,7 +374,7 @@ export default function SessionsPage() {
                       TABLE-LEVEL GRANTS
                     </Typography>
                     <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ mb: 2 }}>
-                      {s.granted_resources.map(res => (
+                      {(s.granted_resources || []).map(res => (
                         <Chip key={res} label={res} size="small" variant="outlined" />
                       ))}
                     </Stack>
@@ -337,9 +388,19 @@ export default function SessionsPage() {
                           Expires: {new Date(s.end_time).toLocaleTimeString()}
                         </Typography>
                       </Box>
-                      {s.status === 'active' && (
-                        <Chip size="small" label="Live in Target DB" color="success" variant="outlined" />
-                      )}
+                      <Stack direction="row" spacing={1}>
+                        {s.status === 'active' && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="primary"
+                            startIcon={<TerminalIcon />}
+                            onClick={() => navigate(`/workspace?sessionId=${s.id}`)}
+                          >
+                            Open SQL Workspace
+                          </Button>
+                        )}
+                      </Stack>
                     </Box>
                   </CardContent>
                 </Card>
@@ -349,11 +410,130 @@ export default function SessionsPage() {
         </Grid>
       )}
 
-      {/* TAB 1: Pending Approvals Queue */}
-      {isAdminOrDba && currentTab === 1 && (
+      {/* TAB 1: Access Request Lifecycle */}
+      {currentTab === 1 && (
         <Card>
           <TableContainer component={Paper} variant="outlined" sx={{ border: 'none' }}>
-            <Table>
+            <Table size="small">
+              <TableHead sx={{ backgroundColor: 'rgba(255, 255, 255, 0.04)' }}>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600 }}>ID</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Requester</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Access Profile</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Duration</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Justification</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>OPA Decision</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Session / Approver</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 600 }}>Action</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {allRequests.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                      No access requests found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  allRequests.map((req) => (
+                    <TableRow key={req.id} hover>
+                      <TableCell sx={{ fontWeight: 700 }}>#{req.id}</TableCell>
+                      <TableCell>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>{req.username}</Typography>
+                        <Typography variant="caption" color="text.secondary">{req.full_name}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>{req.profile_name}</Typography>
+                        <Chip size="small" label={`Risk: ${req.risk_level}`} color="error" variant="outlined" sx={{ height: 18, fontSize: '0.65rem' }} />
+                      </TableCell>
+                      <TableCell>{req.requested_duration_minutes}m</TableCell>
+                      <TableCell sx={{ maxWidth: 220 }}>
+                        <Typography variant="body2" sx={{ fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {req.justification}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={req.decision_action ? req.decision_action.toUpperCase() : 'PENDING'}
+                          color={req.decision_action === 'allow' ? 'success' : req.decision_action === 'deny' ? 'error' : 'warning'}
+                          sx={{ height: 20, fontSize: '0.7rem', fontWeight: 700 }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={req.status.toUpperCase()}
+                          color={getStatusChipColor(req.status)}
+                          sx={{ height: 22, fontSize: '0.75rem', fontWeight: 700 }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {req.session_id ? (
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'primary.light', display: 'block', fontWeight: 600 }}>
+                            Session #{req.session_id}
+                          </Typography>
+                        ) : null}
+                        {req.approved_by_username ? (
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            By: {req.approved_by_username}
+                          </Typography>
+                        ) : (
+                          <Typography variant="caption" color="text.disabled">-</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="right">
+                        {req.status === 'active' && req.session_id ? (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="primary"
+                            startIcon={<TerminalIcon />}
+                            onClick={() => navigate(`/workspace?sessionId=${req.session_id}`)}
+                            sx={{ fontSize: '0.7rem' }}
+                          >
+                            Workspace
+                          </Button>
+                        ) : req.status === 'pending' && isAdminOrDba ? (
+                          <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                            <Button
+                              size="small"
+                              variant="contained"
+                              color="success"
+                              onClick={() => setDecisionDialog({ open: true, requestId: req.id, type: 'approve', comments: '' })}
+                              sx={{ fontSize: '0.7rem', py: 0.2 }}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="error"
+                              onClick={() => setDecisionDialog({ open: true, requestId: req.id, type: 'deny', comments: '' })}
+                              sx={{ fontSize: '0.7rem', py: 0.2 }}
+                            >
+                              Deny
+                            </Button>
+                          </Stack>
+                        ) : (
+                          <Typography variant="caption" color="text.disabled">—</Typography>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Card>
+      )}
+
+      {/* TAB 2: Pending Approvals Queue (Admin & DBA) */}
+      {isAdminOrDba && currentTab === 2 && (
+        <Card>
+          <TableContainer component={Paper} variant="outlined" sx={{ border: 'none' }}>
+            <Table size="small">
               <TableHead sx={{ backgroundColor: 'rgba(255, 255, 255, 0.04)' }}>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>ID</TableCell>
@@ -420,11 +600,11 @@ export default function SessionsPage() {
         </Card>
       )}
 
-      {/* TAB 2: Active Global Sessions */}
-      {isAdminOrDba && currentTab === 2 && (
+      {/* TAB 3: Active Global Sessions (Admin & DBA) */}
+      {isAdminOrDba && currentTab === 3 && (
         <Card>
           <TableContainer component={Paper} variant="outlined" sx={{ border: 'none' }}>
-            <Table>
+            <Table size="small">
               <TableHead sx={{ backgroundColor: 'rgba(255, 255, 255, 0.04)' }}>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>Session ID</TableCell>
@@ -456,15 +636,26 @@ export default function SessionsPage() {
                       <TableCell>{s.profile_name}</TableCell>
                       <TableCell>{new Date(s.end_time).toLocaleTimeString()}</TableCell>
                       <TableCell align="right">
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          color="error"
-                          startIcon={<DeleteForeverIcon />}
-                          onClick={() => handleRevokeSession(s.id)}
-                        >
-                          Revoke User
-                        </Button>
+                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="primary"
+                            startIcon={<TerminalIcon />}
+                            onClick={() => navigate(`/workspace?sessionId=${s.id}`)}
+                          >
+                            Workspace
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            startIcon={<DeleteForeverIcon />}
+                            onClick={() => handleRevokeSession(s.id)}
+                          >
+                            Revoke User
+                          </Button>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   ))
@@ -548,7 +739,7 @@ export default function SessionsPage() {
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <Alert severity="warning" sx={{ mb: 2.5 }}>
-            <strong>Copy these credentials now.</strong> For zero-trust security, this ephemeral password is only displayed once and will automatically expire.
+            <strong>Ephemeral JIT credentials provisioned.</strong> You can connect externally with DBeaver/Workbench, or execute queries immediately inside the In-App SQL Workspace.
           </Alert>
 
           {credentialsModal.credentials && (
@@ -595,14 +786,21 @@ export default function SessionsPage() {
               </Box>
             </Paper>
           )}
-
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
-            Connect with <strong>DBeaver</strong>, <strong>MySQL Workbench</strong>, or the <code>mysql</code> command-line client using the credentials above.
-          </Typography>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
           <Button
             variant="contained"
+            color="primary"
+            startIcon={<TerminalIcon />}
+            onClick={() => {
+              setCredentialsModal({ ...credentialsModal, open: false });
+              navigate('/workspace');
+            }}
+          >
+            Open in SQL Workspace
+          </Button>
+          <Button
+            variant="outlined"
             onClick={() => setCredentialsModal({ ...credentialsModal, open: false })}
           >
             I Have Saved These Credentials
@@ -610,7 +808,7 @@ export default function SessionsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Admin Approve / Deny Dialog */}
+      {/* Admin/DBA Approve / Deny Dialog */}
       <Dialog
         open={decisionDialog.open}
         onClose={() => setDecisionDialog({ ...decisionDialog, open: false })}
@@ -622,7 +820,7 @@ export default function SessionsPage() {
         </DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <TextField
-            label="Administrator Comments / Notes"
+            label="Administrator/DBA Comments / Notes"
             multiline
             rows={2}
             fullWidth

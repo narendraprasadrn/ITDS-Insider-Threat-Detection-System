@@ -2,12 +2,39 @@
 import { sessionService } from '../services/session.service.js';
 
 export const sessionController = {
+  async listAllSessions(req, res, next) {
+    try {
+      const { status, limit, offset } = req.query;
+      const sessions = await sessionService.listSessions({
+        user: req.user,
+        status,
+        limit,
+        offset
+      });
+
+      const active_sessions = sessions.filter(s => s.status === 'active');
+
+      res.status(200).json({
+        success: true,
+        data: {
+          sessions,
+          active_sessions
+        }
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async listActive(req, res, next) {
     try {
       const sessions = await sessionService.getActiveSessions();
       res.status(200).json({
         success: true,
-        data: { sessions }
+        data: {
+          sessions,
+          active_sessions: sessions
+        }
       });
     } catch (err) {
       next(err);
@@ -19,7 +46,22 @@ export const sessionController = {
       const sessions = await sessionService.getUserSessions(req.user.id);
       res.status(200).json({
         success: true,
-        data: { sessions }
+        data: {
+          sessions,
+          active_sessions: sessions.filter(s => s.status === 'active')
+        }
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getSessionById(req, res, next) {
+    try {
+      const session = await sessionService.getSessionById(req.params.id, req.user);
+      res.status(200).json({
+        success: true,
+        data: { session }
       });
     } catch (err) {
       next(err);

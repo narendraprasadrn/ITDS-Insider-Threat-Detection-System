@@ -92,7 +92,8 @@ export default function DashboardPage() {
       }
 
       if (sessData.success) {
-        const enrichedSessions = (sessData.data.active_sessions || []).map(sess => ({
+        const sessionList = sessData.data.active_sessions || sessData.data.sessions || [];
+        const enrichedSessions = sessionList.map(sess => ({
           ...sess,
           risk: scoresMap.get(sess.id) || { score: 0, risk_level: 'low', breakdown: [] }
         }));

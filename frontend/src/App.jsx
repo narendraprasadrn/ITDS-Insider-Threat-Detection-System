@@ -12,6 +12,7 @@ import UserManagement from './pages/UserManagement.jsx';
 import ProfilesPage from './pages/ProfilesPage.jsx';
 import PoliciesPage from './pages/PoliciesPage.jsx';
 import SessionsPage from './pages/SessionsPage.jsx';
+import WorkspacePage from './pages/WorkspacePage.jsx';
 import SqlEventsPage from './pages/SqlEventsPage.jsx';
 import ViolationsPage from './pages/ViolationsPage.jsx';
 import ThreatFeedPage from './pages/ThreatFeedPage.jsx';
@@ -40,6 +41,7 @@ export default function App() {
               <Route path="profiles" element={<ProfilesPage />} />
               <Route path="policies" element={<PoliciesPage />} />
               <Route path="sessions" element={<SessionsPage />} />
+              <Route path="workspace" element={<WorkspacePage />} />
               <Route path="sql-events" element={<ProtectedRoute requiredRoles={['admin', 'dba']}><SqlEventsPage /></ProtectedRoute>} />
               <Route path="violations" element={<ProtectedRoute requiredRoles={['admin', 'dba']}><ViolationsPage /></ProtectedRoute>} />
               <Route path="threats" element={<ProtectedRoute requiredRoles={['admin', 'dba']}><ThreatFeedPage /></ProtectedRoute>} />

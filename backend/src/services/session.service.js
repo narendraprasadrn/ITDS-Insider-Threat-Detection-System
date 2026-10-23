@@ -17,7 +17,6 @@ export const sessionService = {
     for (let i = 0; i < length; i++) {
       pass += chars[bytes[i] % chars.length];
     }
-    // ensure at least one number and letter
     return `Jit${pass.replace(/['"\\/`]/g, 'X')}9!`;
   },
 
@@ -31,7 +30,7 @@ export const sessionService = {
 
     logger.info({ mysqlUsername, profile: profile.name }, 'Provisioning JIT MySQL user');
 
-    // 1. Create MySQL user on host '%' and 'localhost' as separate clean statements
+    // 1. Create MySQL user on host '%' and 'localhost'
     await pool.query(`CREATE USER '${mysqlUsername}'@'%' IDENTIFIED BY '${mysqlPassword}'`);
     await pool.query(`CREATE USER '${mysqlUsername}'@'localhost' IDENTIFIED BY '${mysqlPassword}'`);
 
@@ -40,7 +39,7 @@ export const sessionService = {
     const ddlGranted = allowedOps.includes('DDL');
     const tableOps = allowedOps.filter(op => ['SELECT', 'INSERT', 'UPDATE', 'DELETE'].includes(op));
 
-    // Table-level grants for each resource
+    // Table-level grants for each resource in profile
     for (const res of profile.resources) {
       if (tableOps.length > 0) {
         const grantsList = tableOps.join(', ');
@@ -98,7 +97,6 @@ export const sessionService = {
    */
   async dropMysqlUser(mysqlUsername) {
     try {
-      // Find active connection thread IDs
       const [threads] = await pool.query(
         `SELECT ID FROM information_schema.processlist WHERE USER = ?`,
         [mysqlUsername]
@@ -113,7 +111,6 @@ export const sessionService = {
         }
       }
 
-      // Drop MySQL user
       await pool.query(`DROP USER IF EXISTS '${mysqlUsername}'@'%'`);
       await pool.query(`DROP USER IF EXISTS '${mysqlUsername}'@'localhost'`);
       await pool.query('FLUSH PRIVILEGES');
@@ -124,12 +121,12 @@ export const sessionService = {
   },
 
   /**
-   * Background Expiry Worker: drop expired users and mark status = 'expired'
+   * Background Expiry Worker: drop expired users, mark session and request as 'expired'
    */
   async processExpiredSessions() {
     try {
       const [expired] = await pool.query(
-        `SELECT id, mysql_username, user_id FROM db_sessions
+        `SELECT id, request_id, mysql_username, user_id FROM db_sessions
          WHERE status = 'active' AND end_time <= NOW()`
       );
 
@@ -140,12 +137,19 @@ export const sessionService = {
       for (const s of expired) {
         await this.dropMysqlUser(s.mysql_username);
         await pool.execute(`UPDATE db_sessions SET status = 'expired' WHERE id = ?`, [s.id]);
+
+        // Synchronize access_requests lifecycle
+        await pool.execute(
+          `UPDATE access_requests SET status = 'expired' WHERE id = ? OR session_id = ?`,
+          [s.request_id, s.id]
+        );
+
         await auditService.log({
           eventType: 'SESSION_EXPIRED',
           userId: s.user_id,
           username: s.mysql_username,
           status: 'SUCCESS',
-          details: { sessionId: s.id }
+          details: { sessionId: s.id, requestId: s.request_id }
         });
       }
 
@@ -157,11 +161,11 @@ export const sessionService = {
   },
 
   /**
-   * Manual force-revoke session by administrator
+   * Manual force-revoke session by administrator or DBA
    */
-  async revokeSession(sessionId, adminUser) {
+  async revokeSession(sessionId, decidingUser) {
     const [rows] = await pool.execute(
-      `SELECT id, mysql_username, user_id, status FROM db_sessions WHERE id = ? LIMIT 1`,
+      `SELECT id, request_id, mysql_username, user_id, status FROM db_sessions WHERE id = ? LIMIT 1`,
       [sessionId]
     );
 
@@ -177,8 +181,18 @@ export const sessionService = {
     // Drop user and kill connections
     await this.dropMysqlUser(session.mysql_username);
 
-    // Update status to revoked
+    // Update session status to revoked
     await pool.execute(`UPDATE db_sessions SET status = 'revoked' WHERE id = ?`, [sessionId]);
+
+    // Synchronize access_requests lifecycle
+    await pool.execute(
+      `UPDATE access_requests
+       SET status = 'revoked',
+           revoked_at = CURRENT_TIMESTAMP,
+           revoked_by = ?
+       WHERE id = ? OR session_id = ?`,
+      [decidingUser?.id || null, session.request_id, sessionId]
+    );
 
     await auditService.log({
       eventType: 'SESSION_REVOKED',
@@ -187,7 +201,8 @@ export const sessionService = {
       status: 'WARNING',
       details: {
         sessionId,
-        revokedBy: adminUser?.username || 'admin'
+        requestId: session.request_id,
+        revokedBy: decidingUser?.username || 'admin'
       }
     });
 
@@ -195,7 +210,81 @@ export const sessionService = {
   },
 
   /**
-   * Get active sessions with user details
+   * Unified listSessions endpoint supporting filtering and role scoping
+   */
+  async listSessions({ user, status, limit = 50, offset = 0 } = {}) {
+    const isElevated = user.roles.some(r => r === 'admin' || r === 'dba');
+
+    let sql = `
+      SELECT s.id, s.request_id, s.user_id, s.profile_id, s.status, s.start_time, s.end_time,
+             s.mysql_username, s.granted_operations, s.granted_resources, s.created_at,
+             u.username, u.full_name, u.email,
+             p.name AS profile_name, p.risk_level
+      FROM db_sessions s
+      JOIN users u ON s.user_id = u.id
+      JOIN access_profiles p ON s.profile_id = p.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (!isElevated) {
+      sql += ' AND s.user_id = ?';
+      params.push(user.id);
+    }
+
+    if (status && status !== 'all') {
+      sql += ' AND s.status = ?';
+      params.push(status);
+    }
+
+    sql += ' ORDER BY s.id DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit, 10), parseInt(offset, 10));
+
+    const [rows] = await pool.query(sql, params);
+
+    return rows.map(r => ({
+      ...r,
+      granted_operations: typeof r.granted_operations === 'string' ? JSON.parse(r.granted_operations) : (r.granted_operations || []),
+      granted_resources: typeof r.granted_resources === 'string' ? JSON.parse(r.granted_resources) : (r.granted_resources || [])
+    }));
+  },
+
+  /**
+   * Get single session details by ID
+   */
+  async getSessionById(sessionId, user) {
+    const isElevated = user.roles.some(r => r === 'admin' || r === 'dba');
+
+    const [rows] = await pool.execute(
+      `SELECT s.id, s.request_id, s.user_id, s.profile_id, s.status, s.start_time, s.end_time,
+              s.mysql_username, s.granted_operations, s.granted_resources, s.created_at,
+              u.username, u.full_name, u.email,
+              p.name AS profile_name, p.risk_level
+       FROM db_sessions s
+       JOIN users u ON s.user_id = u.id
+       JOIN access_profiles p ON s.profile_id = p.id
+       WHERE s.id = ? LIMIT 1`,
+      [sessionId]
+    );
+
+    if (rows.length === 0) {
+      throw new AppError('Session not found', 404, 'NOT_FOUND');
+    }
+
+    const session = rows[0];
+    if (!isElevated && session.user_id !== user.id) {
+      throw new AppError('Unauthorized access to session details', 403, 'FORBIDDEN');
+    }
+
+    return {
+      ...session,
+      granted_operations: typeof session.granted_operations === 'string' ? JSON.parse(session.granted_operations) : (session.granted_operations || []),
+      granted_resources: typeof session.granted_resources === 'string' ? JSON.parse(session.granted_resources) : (session.granted_resources || [])
+    };
+  },
+
+  /**
+   * Get active sessions with user details (for dashboard & legacy consumers)
    */
   async getActiveSessions() {
     const [rows] = await pool.query(
