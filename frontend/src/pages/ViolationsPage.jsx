@@ -113,12 +113,12 @@ export default function ViolationsPage() {
   };
 
   const getEnforcementChip = (type) => {
-    if (type === 'blocked_by_db') {
+    if (type === 'blocked_pre_execution' || type === 'blocked_by_db') {
       return (
         <Chip
           icon={<BootstrapIcon name="bi-shield-x" size={13} />}
-          label="BLOCKED PRE-EXEC (DB)"
-          color="success"
+          label={type === 'blocked_pre_execution' ? 'BLOCKED PRE-EXEC' : 'BLOCKED PRE-EXEC (DB)'}
+          color="error"
           variant="outlined"
           size="small"
           sx={{ fontWeight: 700, height: 22, fontSize: '0.65rem' }}
@@ -139,7 +139,7 @@ export default function ViolationsPage() {
 
   // Metrics
   const totalCount = violations.length;
-  const blockedCount = violations.filter((v) => v.enforcement_type === 'blocked_by_db').length;
+  const blockedCount = violations.filter((v) => v.enforcement_type === 'blocked_pre_execution' || v.enforcement_type === 'blocked_by_db').length;
   const postHocCount = violations.filter((v) => v.enforcement_type === 'detected_post_hoc').length;
   const criticalHighCount = violations.filter((v) => ['critical', 'high'].includes(v.severity)).length;
 
@@ -201,9 +201,9 @@ export default function ViolationsPage() {
           <Card sx={{ bgcolor: 'background.paper', border: '1px solid rgba(255,255,255,0.08)' }}>
             <CardContent sx={{ py: 2 }}>
               <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 600 }}>
-                Blocked By MySQL GRANTs
+                Blocked Pre-Execution
               </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: '#66bb6a', mt: 0.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#ef5350', mt: 0.5 }}>
                 {blockedCount}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -274,6 +274,7 @@ export default function ViolationsPage() {
                 onChange={(e) => setEnforcementFilter(e.target.value)}
               >
                 <MenuItem value="">All Types</MenuItem>
+                <MenuItem value="blocked_pre_execution">Blocked Pre-Execution (Policy)</MenuItem>
                 <MenuItem value="blocked_by_db">Blocked by DB (Pre-Execution)</MenuItem>
                 <MenuItem value="detected_post_hoc">Detected Post-Hoc (Audit Log)</MenuItem>
               </Select>

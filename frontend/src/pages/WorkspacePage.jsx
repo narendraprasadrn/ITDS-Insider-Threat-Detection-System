@@ -39,8 +39,12 @@ const SAMPLE_QUERIES = [
     sql: "SELECT customer_code, name, customer_category, credit_limit FROM Customers WHERE customer_category = 'enterprise' LIMIT 5;"
   },
   {
-    name: 'Authorized Read (ALLOW)',
-    sql: 'SELECT * FROM Products;'
+    name: 'Authorized Bounded Read (ALLOW)',
+    sql: 'SELECT product_code, name, category, unit_price FROM Products LIMIT 10;'
+  },
+  {
+    name: 'Unbounded Read (Blocked by Policy)',
+    sql: 'SELECT * FROM Customers;'
   },
   {
     name: 'Critical Data Scan (Blocked)',
@@ -305,22 +309,27 @@ export default function WorkspacePage() {
 
       const data = await res.json();
 
-      if (res.status === 403 && data.data?.blocked) {
+      if ((res.status === 403 || !res.ok) && data.data?.blocked) {
         // Pre-Execution Policy Block
         setExecutionResult({
           blocked: true,
-          outcome: 'DENIED',
+          outcome: data.data.outcome || 'BLOCKED PRE-EXECUTION',
+          rule: data.data.rule || data.data.policyDecision?.violations?.[0] || 'UNAUTHORIZED_QUERY',
+          explanation: data.data.explanation || data.data.policyDecision?.reasons?.[0] || data.data.message || 'Unbounded read requires approval or a restrictive LIMIT clause',
+          message: data.data.message || 'Query Blocked by Security Policy',
           eventId: data.data.eventId,
           sessionId: data.data.sessionId,
           policyDecision: data.data.policyDecision,
           operation: data.data.operation,
           tables: data.data.tables,
-          message: data.data.message
+          rows: [],
+          rowCount: 0,
+          columns: []
         });
       } else if (!res.ok || !data.success) {
         setError(data.error?.message || 'SQL execution failed');
       } else {
-        // Successful execution (ALLOWED, REVIEW, or POST-EXECUTION DETECTED)
+        // Successful execution (ALLOWED or POST-EXECUTION DETECTED)
         setExecutionResult(data.data);
       }
 
@@ -588,15 +597,15 @@ export default function WorkspacePage() {
         </CardContent>
       </Card>
 
-      {/* 4 DISTINCT OUTCOMES: ALLOWED, DENIED, REVIEW, POST-EXECUTION DETECTED */}
+      {/* DISTINCT OUTCOMES: BLOCKED PRE-EXECUTION, ALLOWED, DETECTED POST-EXECUTION */}
       {executionResult && (
         <Box sx={{ mb: 2.5 }}>
-          {/* 1. DENIED (Pre-execution preventative block) */}
-          {(executionResult.blocked || executionResult.outcome === 'DENIED') && (
+          {/* 1. BLOCKED PRE-EXECUTION (Pre-execution preventative block) */}
+          {(executionResult.blocked || executionResult.outcome === 'DENIED' || executionResult.outcome === 'BLOCKED PRE-EXECUTION') && (
             <Alert
               severity="error"
-              icon={<BootstrapIcon name="bi-shield-x" size={20} color="#EF4444" />}
-              sx={{ fontWeight: 500 }}
+              icon={<BootstrapIcon name="bi-shield-x" size={22} color="#EF4444" />}
+              sx={{ fontWeight: 500, bgcolor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.4)' }}
               action={
                 executionResult.eventId && (
                   <Button
@@ -605,22 +614,42 @@ export default function WorkspacePage() {
                     variant="outlined"
                     startIcon={<BootstrapIcon name="bi-shield-check" size={14} />}
                     onClick={() => setActiveTab(2)}
-                    sx={{ fontSize: '0.72rem', textTransform: 'none' }}
+                    sx={{ fontSize: '0.72rem', textTransform: 'none', borderColor: 'rgba(239, 68, 68, 0.5)' }}
                   >
                     Inspect Violation #{executionResult.eventId}
                   </Button>
                 )
               }
             >
-              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                Query Pre-Emptively Blocked [DENIED]
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#F87171' }}>
+                  Query Blocked by Security Policy
+                </Typography>
+                <Chip
+                  label="BLOCKED PRE-EXECUTION"
+                  size="small"
+                  sx={{ bgcolor: 'rgba(239, 68, 68, 0.25)', color: '#FCA5A5', fontWeight: 700, height: 22, fontSize: '0.68rem', border: '1px solid #EF4444' }}
+                />
+                {executionResult.rule && (
+                  <Chip
+                    label={`Rule: ${executionResult.rule}`}
+                    size="small"
+                    sx={{ bgcolor: 'rgba(239, 68, 68, 0.15)', color: '#F87171', fontWeight: 600, height: 22, fontSize: '0.68rem' }}
+                  />
+                )}
+                <Chip
+                  label="0 Rows Returned • MySQL Execution Prevented"
+                  size="small"
+                  variant="outlined"
+                  sx={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: '#FCA5A5', height: 22, fontSize: '0.68rem' }}
+                />
+              </Box>
+              <Typography variant="body2" sx={{ mt: 0.5, color: '#E2E8F0' }}>
+                {executionResult.explanation || executionResult.message || 'Unbounded read requires approval or a restrictive LIMIT clause.'}
               </Typography>
-              <Typography variant="body2" sx={{ mt: 0.5 }}>
-                {executionResult.message || 'Operation or table access denied prior to execution by policy.'}
-              </Typography>
-              {isAdminOrDba && (
+              {isAdminOrDba && executionResult.policyDecision?.violations && executionResult.policyDecision.violations.length > 0 && (
                 <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  {(executionResult.policyDecision?.violations || []).map(v => (
+                  {executionResult.policyDecision.violations.map(v => (
                     <Chip key={v} label={`Violation: ${v}`} size="small" color="error" sx={{ height: 20, fontSize: '0.7rem' }} />
                   ))}
                 </Box>
@@ -793,8 +822,21 @@ export default function WorkspacePage() {
                   </TableRow>
                 ) : executionResult.blocked ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'error.light' }}>
-                      No results returned: Query was blocked pre-execution.
+                    <TableCell colSpan={6} align="center" sx={{ py: 5, color: 'error.light' }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                        <BootstrapIcon name="bi-shield-x" size={28} color="#EF4444" />
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#F87171' }}>
+                          0 Rows Returned: Query Blocked by Security Policy
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#AAB8BC', maxWidth: 500 }}>
+                          Database execution was prevented prior to reaching MySQL. No rows or sensitive data were returned.
+                        </Typography>
+                        <Chip
+                          label={executionResult.rule ? `Triggered Rule: ${executionResult.rule}` : 'Pre-execution policy violation'}
+                          size="small"
+                          sx={{ bgcolor: 'rgba(239, 68, 68, 0.15)', color: '#FCA5A5', mt: 0.5 }}
+                        />
+                      </Box>
                     </TableCell>
                   </TableRow>
                 ) : !executionResult.rows || executionResult.rows.length === 0 ? (
@@ -908,7 +950,13 @@ export default function WorkspacePage() {
                         <Chip size="small" label={v.severity.toUpperCase()} color={v.severity === 'critical' ? 'error' : 'warning'} sx={{ height: 20, fontSize: '0.7rem' }} />
                       </TableCell>
                       <TableCell>
-                        <Chip size="small" variant="outlined" label={v.enforcement_type} sx={{ height: 20, fontSize: '0.7rem' }} />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={v.enforcement_type === 'blocked_pre_execution' ? 'BLOCKED PRE-EXEC' : (v.enforcement_type === 'blocked_by_db' ? 'BLOCKED PRE-EXEC (DB)' : 'DETECTED POST-HOC')}
+                          color={v.enforcement_type === 'blocked_pre_execution' || v.enforcement_type === 'blocked_by_db' ? 'error' : 'warning'}
+                          sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700 }}
+                        />
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.85rem' }}>{v.reason}</TableCell>
                       <TableCell sx={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>

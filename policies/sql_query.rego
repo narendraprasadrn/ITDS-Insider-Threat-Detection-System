@@ -104,6 +104,20 @@ violations contains violation if {
     }
 }
 
+violations contains violation if {
+    input.query.operation == "SELECT"
+    input.query.has_limit == false
+    input.query.select_star == false
+    input.query.has_where == false
+    not is_unbounded_read_exempt
+    is_critical_resource_accessed
+    violation := {
+        "rule": "UNBOUNDED_BULK_READ",
+        "severity": "critical",
+        "reason": "Unbounded bulk read attempted on critical sensitivity data without LIMIT clause"
+    }
+}
+
 # Unbounded bulk read on standard application tables (severity: medium -> triggers REVIEW)
 violations contains violation if {
     input.query.operation == "SELECT"
@@ -114,7 +128,21 @@ violations contains violation if {
     violation := {
         "rule": "UNBOUNDED_BULK_READ",
         "severity": "medium",
-        "reason": "Full table scan detected: SELECT * without LIMIT clause"
+        "reason": "Unbounded read requires approval or a restrictive LIMIT clause"
+    }
+}
+
+violations contains violation if {
+    input.query.operation == "SELECT"
+    input.query.has_limit == false
+    input.query.has_where == false
+    input.query.select_star == false
+    not is_unbounded_read_exempt
+    not is_critical_resource_accessed
+    violation := {
+        "rule": "UNBOUNDED_BULK_READ",
+        "severity": "medium",
+        "reason": "Unbounded read requires approval or a restrictive LIMIT clause"
     }
 }
 
