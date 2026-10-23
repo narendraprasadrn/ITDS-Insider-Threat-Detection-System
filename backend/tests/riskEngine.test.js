@@ -247,7 +247,7 @@ describe('Phase 8 Threat Detection Engine & Risk Scoring Tests', () => {
       // Create a test session in db_sessions
       const [res] = await pool.query(
         `INSERT INTO db_sessions (request_id, user_id, profile_id, status, end_time, mysql_username, granted_operations, granted_resources)
-         VALUES (1, 4, 1, 'active', DATE_ADD(NOW(), INTERVAL 1 HOUR), 'jit_test_risk_1', '["SELECT"]', '["target_db.customers"]')`
+         VALUES (1, 3, 1, 'active', DATE_ADD(NOW(), INTERVAL 1 HOUR), 'jit_test_risk_1', '["SELECT"]', '["target_db.customers"]')`
       );
       testSessionId = res.insertId;
 
@@ -255,7 +255,7 @@ describe('Phase 8 Threat Detection Engine & Risk Scoring Tests', () => {
       await pool.query(
         `INSERT INTO sql_events (session_id, user_id, mysql_username, thread_id, event_time, raw_sql, operation, tables, flags, status)
          VALUES
-         (?, 4, 'jit_test_risk_1', 999, '2026-10-22 02:30:00', 'SELECT * FROM target_db.salaries;', 'SELECT', '["target_db.salaries"]', '{"select_star": true, "has_limit": false, "is_unbounded_read": true}', 'attributed')`,
+         (?, 3, 'jit_test_risk_1', 999, '2026-10-22 02:30:00', 'SELECT * FROM target_db.salaries;', 'SELECT', '["target_db.salaries"]', '{"select_star": true, "has_limit": false, "is_unbounded_read": true}', 'attributed')`,
         [testSessionId]
       );
     });
@@ -309,7 +309,7 @@ describe('Phase 8 Threat Detection Engine & Risk Scoring Tests', () => {
       expect(updatedAlerts[0].analyst_notes).toContain('exfiltration');
     });
 
-    it('denies access to /alerts and /risk-scores for non-analyst roles', async () => {
+    it('denies access to /alerts and /risk-scores for non-privileged roles', async () => {
       const res = await request(app)
         .get('/alerts')
         .set('Authorization', `Bearer ${devToken}`);

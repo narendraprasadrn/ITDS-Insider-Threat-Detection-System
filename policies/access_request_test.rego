@@ -24,7 +24,7 @@ test_allow_sales_read if {
 # Test 2: Require approval for critical resources (salaries)
 test_require_approval_critical_salaries if {
     input_doc := {
-        "user": {"username": "hr_staff", "roles": ["hr_staff"]},
+        "user": {"username": "developer", "roles": ["developer"]},
         "profile": {"name": "HR Staff Payroll", "requires_approval": true},
         "resources": [
             {"db_name": "target_db", "table_name": "employees", "sensitivity": "medium"},
@@ -76,7 +76,7 @@ test_deny_ddl_non_dba if {
 # Test 5: Deny off-hours request for high-sensitivity resources by non-admin
 test_deny_off_hours_high_sensitivity if {
     input_doc := {
-        "user": {"username": "analyst", "roles": ["analyst"]},
+        "user": {"username": "developer", "roles": ["developer"]},
         "profile": {"name": "Financial Audit", "requires_approval": true},
         "resources": [{"db_name": "target_db", "table_name": "payments", "sensitivity": "high"}],
         "operations": ["SELECT"],
@@ -107,7 +107,7 @@ test_admin_override_off_hours if {
 # Test 7: Deny when requested duration exceeds sensitivity threshold (critical max is 60m)
 test_deny_duration_cap_exceeded if {
     input_doc := {
-        "user": {"username": "hr_staff", "roles": ["hr_staff"]},
+        "user": {"username": "developer", "roles": ["developer"]},
         "profile": {"name": "HR Payroll", "requires_approval": true},
         "resources": [{"db_name": "target_db", "table_name": "salaries", "sensitivity": "critical"}],
         "operations": ["SELECT"],

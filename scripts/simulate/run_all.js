@@ -104,7 +104,7 @@ function generateMarkdownReport(results, totalTimeMs) {
 
   md += `## 3. Analysis & Key Findings\n\n`;
   md += `1. **Zero False Positives in Normal Usage (Scenario A)**:\n`;
-  md += `   Compliant analysts executing bounded queries within their authorized profile and business hours produced a risk score of 0/100 with zero policy violations and zero false alerts.\n\n`;
+  md += `   Compliant developers executing bounded queries within their authorized profile and business hours produced a risk score of 0/100 with zero policy violations and zero false alerts.\n\n`;
   md += `2. **Sub-5-Second Detection Latency Across All Attacks**:\n`;
   md += `   Despite relying on asynchronous server-side logging (\`mysql.general_log\` with a 1.5s polling loop), detection, AST parsing, Rego policy evaluation, and alert generation completed in under 5 seconds (mean detection latency: ~4.5s).\n\n`;
   md += `3. **Multi-Vector Explainable Scoring**:\n`;

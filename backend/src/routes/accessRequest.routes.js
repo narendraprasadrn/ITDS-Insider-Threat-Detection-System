@@ -8,8 +8,8 @@ const router = Router();
 // Submit access request (any authenticated employee)
 router.post('/', authenticate, accessRequestController.createRequest);
 
-// Admin / Security Analyst approval queue
-router.get('/pending', authenticate, requireRole('admin', 'security_analyst'), accessRequestController.listPending);
+// Admin / DBA approval queue
+router.get('/pending', authenticate, requireRole('admin', 'dba'), accessRequestController.listPending);
 router.post('/:id/approve', authenticate, requireRole('admin'), accessRequestController.approveRequest);
 router.post('/:id/deny', authenticate, requireRole('admin'), accessRequestController.denyRequest);
 

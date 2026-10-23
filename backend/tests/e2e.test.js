@@ -8,22 +8,22 @@ import { ingestorService } from '../src/services/ingestor.service.js';
 import { riskEngineService } from '../src/services/riskEngine.service.js';
 
 describe('Phase 10 End-to-End Pipeline Integration Test', () => {
-  let hrToken = '';
+  let devToken = '';
   let adminToken = '';
-  let hrUserId = null;
+  let devUserId = null;
   let requestId = null;
   let sessionId = null;
   let jitCreds = null;
   let createdAlertId = null;
 
   beforeAll(async () => {
-    // 1. Authenticate hr_staff (authorized for HR Payroll profile)
-    const hrLogin = await request(app)
+    // 1. Authenticate developer (authorized for HR Payroll profile with approval)
+    const devLogin = await request(app)
       .post('/auth/login')
-      .send({ username: 'hr_staff', password: 'Password123!' });
-    expect(hrLogin.status).toBe(200);
-    hrToken = hrLogin.body.data.accessToken;
-    hrUserId = hrLogin.body.data.user.id;
+      .send({ username: 'developer', password: 'Password123!' });
+    expect(devLogin.status).toBe(200);
+    devToken = devLogin.body.data.accessToken;
+    devUserId = devLogin.body.data.user.id;
 
     // 2. Authenticate admin
     const adminLogin = await request(app)
@@ -51,7 +51,7 @@ describe('Phase 10 End-to-End Pipeline Integration Test', () => {
     // Profile 3: HR Staff Payroll & Compensation (requires approval)
     const res = await request(app)
       .post('/access-requests')
-      .set('Authorization', `Bearer ${hrToken}`)
+      .set('Authorization', `Bearer ${devToken}`)
       .send({
         profile_id: 3,
         requested_duration_minutes: 30,
@@ -148,7 +148,7 @@ describe('Phase 10 End-to-End Pipeline Integration Test', () => {
     expect(events.length).toBeGreaterThanOrEqual(3);
     for (const evt of events) {
       expect(evt.session_id).toBe(sessionId);
-      expect(evt.user_id).toBe(hrUserId);
+      expect(evt.user_id).toBe(devUserId);
       expect(evt.mysql_username).toBe(jitCreds.username);
     }
 

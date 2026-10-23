@@ -99,17 +99,11 @@ INSERT INTO `profile_resources` (`profile_id`, `resource_id`) VALUES
 INSERT INTO `profile_resources` (`profile_id`, `resource_id`) VALUES
 (6, 1), (6, 2), (6, 3), (6, 4), (6, 5), (6, 6);
 
--- Role-Profiles Mapping (Roles: 1:admin, 2:security_analyst, 3:dba, 4:developer, 5:analyst, 6:hr_staff)
+-- Role-Profiles Mapping (Roles: 1:admin, 2:dba, 3:developer)
 INSERT INTO `role_profiles` (`role_id`, `profile_id`) VALUES
 -- Admin may request any profile
 (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6),
--- Security Analyst: Financial Audit (5), Security Investigation (6)
-(2, 5), (2, 6),
--- DBA: DBA Maintenance (4)
-(3, 4),
--- Developer: Sales Read-Only (1), Support Order Processing (2)
-(4, 1), (4, 2),
--- Analyst: Sales Read-Only (1), Financial Audit (5)
-(5, 1), (5, 5),
--- HR Staff: HR Payroll (3)
-(6, 3);
+-- DBA: DBA Maintenance (4), Financial Audit (5), Sales & Customer Read-Only (1)
+(2, 1), (2, 4), (2, 5),
+-- Developer: Sales Read-Only (1), Support Order Processing (2), HR Payroll & Compensation (3)
+(3, 1), (3, 2), (3, 3);

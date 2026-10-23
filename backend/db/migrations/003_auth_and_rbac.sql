@@ -86,14 +86,11 @@ CREATE TABLE `audit_log` (
 
 -- SEED DATA
 
--- Roles (admin, security_analyst, dba, developer, analyst, hr_staff)
+-- Roles (admin, dba, developer)
 INSERT INTO `roles` (`id`, `name`, `description`) VALUES
 (1, 'admin', 'Full system administrator with user and policy management'),
-(2, 'security_analyst', 'Security investigator for alerts, violations, and risk scoring'),
-(3, 'dba', 'Database administrator authorized for maintenance and DDL'),
-(4, 'developer', 'Application engineer requiring JIT development access'),
-(5, 'analyst', 'Business/data analyst requesting read-only access profiles'),
-(6, 'hr_staff', 'Human resources officer accessing payroll and employee data');
+(2, 'dba', 'Database administrator authorized for maintenance, DDL, and audit monitoring'),
+(3, 'developer', 'Application engineer requiring JIT database access');
 
 -- Permissions
 INSERT INTO `permissions` (`id`, `name`, `description`) VALUES
@@ -110,32 +107,20 @@ INSERT INTO `permissions` (`id`, `name`, `description`) VALUES
 -- Admin has all permissions
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES
 (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8),
--- Security Analyst
-(2, 2), (2, 4), (2, 5), (2, 6), (2, 7), (2, 8),
--- DBA
-(3, 4), (3, 6),
--- Developer
-(4, 4),
--- Analyst
-(5, 4),
--- HR Staff
-(6, 4);
+-- DBA has audit, profile management, session approve/revoke, and threat viewing
+(2, 2), (2, 3), (2, 4), (2, 5), (2, 6), (2, 7), (2, 8),
+-- Developer has session request
+(3, 4);
 
 -- Seed Users with bcrypt hash of 'Password123!'
 -- Hash: $2b$10$IsbCs9eBflog87jBsaQbNeKtAKExZwkYHu.93qJxc5jyuI8FC1BxC
 INSERT INTO `users` (`id`, `username`, `email`, `password_hash`, `full_name`, `is_active`) VALUES
 (1, 'admin', 'admin@itds.internal', '$2b$10$IsbCs9eBflog87jBsaQbNeKtAKExZwkYHu.93qJxc5jyuI8FC1BxC', 'System Administrator', TRUE),
-(2, 'security_analyst', 'sec_analyst@itds.internal', '$2b$10$IsbCs9eBflog87jBsaQbNeKtAKExZwkYHu.93qJxc5jyuI8FC1BxC', 'Alice Security', TRUE),
-(3, 'dba', 'dba@itds.internal', '$2b$10$IsbCs9eBflog87jBsaQbNeKtAKExZwkYHu.93qJxc5jyuI8FC1BxC', 'Dan Database', TRUE),
-(4, 'developer', 'dev@itds.internal', '$2b$10$IsbCs9eBflog87jBsaQbNeKtAKExZwkYHu.93qJxc5jyuI8FC1BxC', 'Dave Developer', TRUE),
-(5, 'analyst', 'analyst@itds.internal', '$2b$10$IsbCs9eBflog87jBsaQbNeKtAKExZwkYHu.93qJxc5jyuI8FC1BxC', 'Anna Analyst', TRUE),
-(6, 'hr_staff', 'hr_staff@itds.internal', '$2b$10$IsbCs9eBflog87jBsaQbNeKtAKExZwkYHu.93qJxc5jyuI8FC1BxC', 'Hannah HR', TRUE);
+(2, 'dba', 'dba@itds.internal', '$2b$10$IsbCs9eBflog87jBsaQbNeKtAKExZwkYHu.93qJxc5jyuI8FC1BxC', 'Dan Database', TRUE),
+(3, 'developer', 'dev@itds.internal', '$2b$10$IsbCs9eBflog87jBsaQbNeKtAKExZwkYHu.93qJxc5jyuI8FC1BxC', 'Dave Developer', TRUE);
 
 -- User-Roles mapping (1 per role)
 INSERT INTO `user_roles` (`user_id`, `role_id`) VALUES
 (1, 1), -- admin -> admin
-(2, 2), -- security_analyst -> security_analyst
-(3, 3), -- dba -> dba
-(4, 4), -- developer -> developer
-(5, 5), -- analyst -> analyst
-(6, 6); -- hr_staff -> hr_staff
+(2, 2), -- dba -> dba
+(3, 3); -- developer -> developer

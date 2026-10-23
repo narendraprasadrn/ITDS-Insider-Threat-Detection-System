@@ -14,12 +14,12 @@ import {
 export async function runScenarioA() {
   const startTs = Date.now();
   console.log('\n-----------------------------------------------------------');
-  console.log(' [Scenario A] Normal Analyst Day (Compliant Operations)');
+  console.log(' [Scenario A] Normal Developer Day (Compliant Operations)');
   console.log('-----------------------------------------------------------');
 
-  // 1. Authenticate admin and analyst
+  // 1. Authenticate admin and developer
   const admin = await login('admin');
-  const user = await login('analyst');
+  const user = await login('developer');
 
   // 2. Request JIT session for Sales & Customer Read-Only (profile 1)
   console.log('1. Submitting JIT request for Sales & Customer profile...');

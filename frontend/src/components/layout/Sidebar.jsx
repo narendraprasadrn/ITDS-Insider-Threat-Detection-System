@@ -34,10 +34,10 @@ export default function Sidebar({ open, onClose, variant = 'permanent' }) {
 
   const userRoles = user?.roles || [];
   const isAdmin = userRoles.includes('admin');
-  const isSecurity = userRoles.includes('security_analyst') || isAdmin;
+  const isAdminOrDba = userRoles.includes('admin') || userRoles.includes('dba');
 
-    const menuItems = [
-    { text: 'Security Console', icon: <DashboardIcon />, path: '/', active: true, phase: 'Phase 9', roles: ['admin', 'security_analyst'] },
+  const menuItems = [
+    { text: 'Security Console', icon: <DashboardIcon />, path: '/', active: true, phase: 'Phase 9', roles: ['admin', 'dba'] },
     {
       text: 'User & RBAC',
       icon: <AdminPanelSettingsIcon />,
@@ -49,9 +49,9 @@ export default function Sidebar({ open, onClose, variant = 'permanent' }) {
     { text: 'Access Profiles', icon: <StorageIcon />, path: '/profiles', active: true, phase: 'Phase 3' },
     { text: 'OPA Policies', icon: <RuleIcon />, path: '/policies', active: true, phase: 'Phase 4' },
     { text: 'JIT Sessions', icon: <LockOpenIcon />, path: '/sessions', active: true, phase: 'Phase 5' },
-    { text: 'SQL Activity Log', icon: <VisibilityIcon />, path: '/sql-events', active: true, phase: 'Phase 6', roles: ['admin', 'security_analyst', 'dba'] },
-    { text: 'Policy Violations', icon: <PolicyIcon />, path: '/violations', active: true, phase: 'Phase 7', roles: ['admin', 'security_analyst', 'dba'] },
-    { text: 'Threat & Risk Feed', icon: <WarningIcon />, path: '/threats', active: true, phase: 'Phase 8', roles: ['admin', 'security_analyst'] }
+    { text: 'SQL Activity Log', icon: <VisibilityIcon />, path: '/sql-events', active: true, phase: 'Phase 6', roles: ['admin', 'dba'] },
+    { text: 'Policy Violations', icon: <PolicyIcon />, path: '/violations', active: true, phase: 'Phase 7', roles: ['admin', 'dba'] },
+    { text: 'Threat & Risk Feed', icon: <WarningIcon />, path: '/threats', active: true, phase: 'Phase 8', roles: ['admin', 'dba'] }
   ];
 
   return (
@@ -87,7 +87,7 @@ export default function Sidebar({ open, onClose, variant = 'permanent' }) {
                   key={r}
                   label={r}
                   size="small"
-                  color={r === 'admin' ? 'error' : r === 'security_analyst' ? 'warning' : 'default'}
+                  color={r === 'admin' ? 'error' : r === 'dba' ? 'info' : 'primary'}
                   sx={{ height: 18, fontSize: '0.65rem' }}
                 />
               ))}

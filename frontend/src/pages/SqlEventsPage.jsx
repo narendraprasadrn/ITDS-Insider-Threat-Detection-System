@@ -47,7 +47,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 export default function SqlEventsPage() {
   const { accessToken, hasRole } = useAuth();
-  const isSecurityOrAdmin = hasRole('admin') || hasRole('security_analyst') || hasRole('dba');
+  const isSecurityOrAdmin = hasRole('admin') || hasRole('dba');
 
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);

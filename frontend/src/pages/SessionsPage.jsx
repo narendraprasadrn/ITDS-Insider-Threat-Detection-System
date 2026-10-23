@@ -50,7 +50,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 export default function SessionsPage() {
   const { user, accessToken, hasRole } = useAuth();
-  const isAdminOrSecurity = hasRole('admin') || hasRole('security_analyst');
+  const isAdminOrDba = hasRole('admin') || hasRole('dba');
 
   const [currentTab, setCurrentTab] = useState(0);
   const [availableProfiles, setAvailableProfiles] = useState([]);
@@ -108,7 +108,7 @@ export default function SessionsPage() {
       if (mySessRes.ok && mySessData.success) setMySessions(mySessData.data.sessions);
 
       // 3. Admin queues
-      if (isAdminOrSecurity) {
+      if (isAdminOrDba) {
         const [pendRes, actRes] = await Promise.all([
           fetch('/api/access-requests/pending', { headers: { Authorization: `Bearer ${accessToken}` } }),
           fetch('/api/sessions/active', { headers: { Authorization: `Bearer ${accessToken}` } })
@@ -130,7 +130,7 @@ export default function SessionsPage() {
     fetchData();
     const interval = setInterval(fetchData, 15000);
     return () => clearInterval(interval);
-  }, [isAdminOrSecurity]);
+  }, [isAdminOrDba]);
 
   const handleRequestSubmit = async (e) => {
     e.preventDefault();
@@ -260,7 +260,7 @@ export default function SessionsPage() {
         sx={{ mb: 3, borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}
       >
         <Tab label={`My Sessions (${mySessions.length})`} />
-        {isAdminOrSecurity && (
+        {isAdminOrDba && (
           <Tab
             label={
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -272,7 +272,7 @@ export default function SessionsPage() {
             }
           />
         )}
-        {isAdminOrSecurity && (
+        {isAdminOrDba && (
           <Tab label={`Active Global Sessions (${activeSessions.length})`} />
         )}
       </Tabs>
@@ -350,7 +350,7 @@ export default function SessionsPage() {
       )}
 
       {/* TAB 1: Pending Approvals Queue */}
-      {isAdminOrSecurity && currentTab === 1 && (
+      {isAdminOrDba && currentTab === 1 && (
         <Card>
           <TableContainer component={Paper} variant="outlined" sx={{ border: 'none' }}>
             <Table>
@@ -421,7 +421,7 @@ export default function SessionsPage() {
       )}
 
       {/* TAB 2: Active Global Sessions */}
-      {isAdminOrSecurity && currentTab === 2 && (
+      {isAdminOrDba && currentTab === 2 && (
         <Card>
           <TableContainer component={Paper} variant="outlined" sx={{ border: 'none' }}>
             <Table>

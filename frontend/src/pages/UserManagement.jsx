@@ -35,7 +35,7 @@ import BlockIcon from '@mui/icons-material/Block';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useAuth } from '../context/AuthContext.jsx';
 
-const ALL_ROLES = ['admin', 'security_analyst', 'dba', 'developer', 'analyst', 'hr_staff'];
+const ALL_ROLES = ['admin', 'dba', 'developer'];
 
 export default function UserManagement() {
   const { accessToken } = useAuth();
@@ -198,11 +198,9 @@ export default function UserManagement() {
                               color={
                                 r === 'admin'
                                   ? 'error'
-                                  : r === 'security_analyst'
-                                  ? 'warning'
                                   : r === 'dba'
                                   ? 'info'
-                                  : 'default'
+                                  : 'primary'
                               }
                               variant="outlined"
                             />

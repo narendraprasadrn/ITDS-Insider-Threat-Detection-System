@@ -111,7 +111,7 @@ describe('Phase 2 Auth & RBAC Test Suite', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data.users)).toBe(true);
-      expect(res.body.data.users.length).toBeGreaterThanOrEqual(6);
+      expect(res.body.data.users.length).toBeGreaterThanOrEqual(3);
     });
   });
 

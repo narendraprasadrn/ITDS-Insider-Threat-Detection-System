@@ -39,7 +39,7 @@ const PRESETS = [
   {
     name: '2. Critical Payroll (Require Approval)',
     input: {
-      user: { username: 'hr_staff', roles: ['hr_staff'] },
+      user: { username: 'developer', roles: ['developer'] },
       profile: { name: 'HR Payroll Read', requires_approval: true },
       resources: [
         { db_name: 'target_db', table_name: 'employees', sensitivity: 'medium' },
@@ -66,7 +66,7 @@ const PRESETS = [
   {
     name: '4. Off-Hours Sensitive Read (Deny)',
     input: {
-      user: { username: 'analyst', roles: ['analyst'] },
+      user: { username: 'developer', roles: ['developer'] },
       profile: { name: 'Financial Audit', requires_approval: true },
       resources: [{ db_name: 'target_db', table_name: 'payments', sensitivity: 'high' }],
       operations: ['SELECT'],

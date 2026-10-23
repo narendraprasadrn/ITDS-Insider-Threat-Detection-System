@@ -8,10 +8,10 @@ const router = Router();
 // Employee view their own sessions
 router.get('/my', authenticate, sessionController.listMySessions);
 
-// Admin view all active sessions
-router.get('/active', authenticate, requireRole('admin', 'security_analyst'), sessionController.listActive);
+// Admin / DBA view all active sessions
+router.get('/active', authenticate, requireRole('admin', 'dba'), sessionController.listActive);
 
-// Admin force-revoke session
-router.post('/:id/revoke', authenticate, requireRole('admin', 'security_analyst'), sessionController.revoke);
+// Admin / DBA force-revoke session
+router.post('/:id/revoke', authenticate, requireRole('admin', 'dba'), sessionController.revoke);
 
 export default router;

@@ -22,11 +22,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 
 const DEMO_PERSONAS = [
   { username: 'admin', role: 'admin', label: 'Admin', color: 'error' },
-  { username: 'security_analyst', role: 'security_analyst', label: 'Sec Analyst', color: 'warning' },
   { username: 'dba', role: 'dba', label: 'DBA', color: 'info' },
-  { username: 'developer', role: 'developer', label: 'Developer', color: 'primary' },
-  { username: 'analyst', role: 'analyst', label: 'Analyst', color: 'secondary' },
-  { username: 'hr_staff', role: 'hr_staff', label: 'HR Staff', color: 'success' }
+  { username: 'developer', role: 'developer', label: 'Developer', color: 'primary' }
 ];
 
 export default function LoginPage() {
@@ -48,8 +45,8 @@ export default function LoginPage() {
 
     try {
       const authUser = await login(username, password);
-      const isSec = (authUser?.roles || []).some(r => ['admin', 'security_analyst'].includes(r));
-      const targetPath = from === '/' ? (isSec ? '/' : '/sessions') : from;
+      const isPrivileged = (authUser?.roles || []).some(r => ['admin', 'dba'].includes(r));
+      const targetPath = from === '/' ? (isPrivileged ? '/' : '/sessions') : from;
       navigate(targetPath, { replace: true });
     } catch (err) {
       setError(err.message || 'Authentication failed. Please verify credentials.');

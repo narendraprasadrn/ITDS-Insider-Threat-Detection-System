@@ -12,6 +12,6 @@ router.post('/refresh', authController.refresh);
 // Authenticated auth endpoints
 router.post('/logout', authenticate, authController.logout);
 router.get('/me', authenticate, authController.getMe);
-router.get('/audit', authenticate, requireRole('admin', 'security_analyst'), authController.getAuditLogs);
+router.get('/audit', authenticate, requireRole('admin', 'dba'), authController.getAuditLogs);
 
 export default router;

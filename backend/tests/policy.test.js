@@ -37,7 +37,7 @@ describe('Phase 4 OPA Policy Engine Integration Tests', () => {
 
     it('should return action: require_approval for critical resources (salaries)', async () => {
       const decision = await policyService.evaluateAccessRequest({
-        user: { username: 'hr_staff', roles: ['hr_staff'] },
+        user: { username: 'developer', roles: ['developer'] },
         profile: { name: 'HR Payroll', requires_approval: true },
         resources: [{ table_name: 'salaries', sensitivity: 'critical' }],
         operations: ['SELECT'],
@@ -70,7 +70,7 @@ describe('Phase 4 OPA Policy Engine Integration Tests', () => {
 
     it('should return action: deny for high-sensitivity off-hours request by non-admin', async () => {
       const decision = await policyService.evaluateAccessRequest({
-        user: { username: 'analyst', roles: ['analyst'] },
+        user: { username: 'developer', roles: ['developer'] },
         profile: { name: 'Financial Audit', requires_approval: true },
         resources: [{ table_name: 'payments', sensitivity: 'high' }],
         operations: ['SELECT'],

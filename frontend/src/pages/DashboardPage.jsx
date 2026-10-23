@@ -53,7 +53,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user, accessToken, hasRole } = useAuth();
-  const isAdminOrSecurity = hasRole('admin') || hasRole('security_analyst');
+  const isAdminOrDba = hasRole('admin') || hasRole('dba');
 
   // Live Stream State
   const [connected, setConnected] = useState(false);
@@ -130,7 +130,10 @@ export default function DashboardPage() {
 
   // SSE Pipeline Connection
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !isAdminOrDba) {
+      setLoading(false);
+      return;
+    }
 
     fetchInitialData();
 
@@ -248,7 +251,7 @@ export default function DashboardPage() {
   };
 
 
-  if (!isAdminOrSecurity) {
+  if (!isAdminOrDba) {
     return (
       <Box sx={{ py: 6, px: 3, maxWidth: 720, mx: 'auto', textAlign: 'center' }}>
         <Card sx={{ p: 4, borderRadius: 3, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
@@ -260,8 +263,8 @@ export default function DashboardPage() {
             Welcome, <strong>{user?.full_name || user?.username}</strong>! You are currently logged in with the <strong>[{user?.roles?.join(', ')}]</strong> role.
           </Typography>
           <Alert severity="info" sx={{ mb: 4, textAlign: 'left' }}>
-            The central Security Operations Console & real-time telemetry stream are restricted to Security Analysts and Administrators.
-            As an employee or developer, you can request and manage Just-In-Time (JIT) ephemeral database credentials under the <strong>JIT Sessions</strong> tab.
+            The central Security Operations Console & real-time telemetry stream are restricted to DBAs and Administrators.
+            As a developer, you can request and manage Just-In-Time (JIT) ephemeral database credentials under the <strong>JIT Sessions</strong> tab.
           </Alert>
           <Button
             variant="contained"

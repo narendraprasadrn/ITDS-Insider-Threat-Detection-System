@@ -6,7 +6,7 @@ import { pool } from '../src/db/pool.js';
 describe('Phase 3 Resources & Access Profiles Test Suite', () => {
   let adminToken = '';
   let devToken = '';
-  let hrToken = '';
+  let dbaToken = '';
   let createdProfileId = null;
 
   beforeAll(async () => {
@@ -22,11 +22,14 @@ describe('Phase 3 Resources & Access Profiles Test Suite', () => {
       .send({ username: 'developer', password: 'Password123!' });
     devToken = devRes.body.data.accessToken;
 
-    // 3. Authenticate hr_staff
-    const hrRes = await request(app)
+    // 3. Authenticate dba
+    const dbaRes = await request(app)
       .post('/auth/login')
-      .send({ username: 'hr_staff', password: 'Password123!' });
-    hrToken = hrRes.body.data.accessToken;
+      .send({ username: 'dba', password: 'Password123!' });
+    dbaToken = dbaRes.body.data.accessToken;
+
+    // Clean up any test artifact profiles
+    await pool.query("DELETE FROM access_profiles WHERE name = 'QA Staging Read'");
   });
 
   afterAll(async () => {
@@ -46,23 +49,22 @@ describe('Phase 3 Resources & Access Profiles Test Suite', () => {
       expect(profileNames).toContain('Sales & Customer Read-Only');
       expect(profileNames).toContain('Support Order Processing');
 
-      // Crucial: Developer MUST NOT see HR Payroll or DBA Maintenance
-      expect(profileNames).not.toContain('HR Staff Payroll & Compensation');
+      // Crucial: Developer MUST NOT see DBA Maintenance or Financial Audit
       expect(profileNames).not.toContain('DBA Schema & Maintenance');
+      expect(profileNames).not.toContain('Financial Audit & Reporting');
     });
 
-    it('hr_staff sees only HR payroll profiles', async () => {
+    it('dba sees only DBA maintenance and permitted profiles', async () => {
       const res = await request(app)
         .get('/profiles/available')
-        .set('Authorization', `Bearer ${hrToken}`);
+        .set('Authorization', `Bearer ${dbaToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
 
       const profileNames = res.body.data.profiles.map(p => p.name);
-      expect(profileNames).toContain('HR Staff Payroll & Compensation');
-      expect(profileNames).not.toContain('DBA Schema & Maintenance');
-      expect(profileNames).not.toContain('Sales & Customer Read-Only');
+      expect(profileNames).toContain('DBA Schema & Maintenance');
+      expect(profileNames).not.toContain('Support Order Processing');
     });
   });
 
@@ -100,7 +102,7 @@ describe('Phase 3 Resources & Access Profiles Test Suite', () => {
           risk_level: 'low',
           requires_approval: false,
           resource_ids: [2, 3], // customers, orders
-          role_ids: [4] // developer
+          role_ids: [3] // developer
         });
 
       expect(res.status).toBe(201);

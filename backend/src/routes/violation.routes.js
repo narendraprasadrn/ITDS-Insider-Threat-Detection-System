@@ -5,7 +5,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-// Restricted to admin, security_analyst, dba
-router.get('/', authenticate, requireRole('admin', 'security_analyst', 'dba'), violationController.listViolations);
+// Restricted to admin, dba
+router.get('/', authenticate, requireRole('admin', 'dba'), violationController.listViolations);
 
 export default router;

@@ -19,9 +19,9 @@ export async function runScenarioD() {
   console.log(' [Scenario D] Off-Hours Sensitive Payroll Access Attack');
   console.log('-----------------------------------------------------------');
 
-  // 1. Authenticate admin and hr_staff
+  // 1. Authenticate admin and developer
   const admin = await login('admin');
-  const user = await login('hr_staff');
+  const user = await login('developer');
 
   // 2. Ensure user baseline has off-hours configured for the current execution window
   const currentHour = new Date().getHours();
@@ -95,7 +95,7 @@ export async function runScenarioD() {
   console.log(`   - Security Alert:      ${alertRaised ? `YES (Alert #${alerts[0]?.id} - ${alerts[0]?.title})` : 'NO'}`);
   console.log(`   - Duration:            ${durationMs}ms`);
 
-  // Restore baseline hours for hr_staff
+  // Restore baseline hours for developer
   const resetDbConn = await mysql.createConnection({
     host: '127.0.0.1',
     port: 3306,
@@ -104,7 +104,7 @@ export async function runScenarioD() {
     database: 'itds_app'
   });
   await resetDbConn.query(
-    `UPDATE user_baselines SET typical_hours_start = 8, typical_hours_end = 17 WHERE user_id = ?`,
+    `UPDATE user_baselines SET typical_hours_start = 9, typical_hours_end = 18 WHERE user_id = ?`,
     [user.user.id]
   );
   await resetDbConn.end();

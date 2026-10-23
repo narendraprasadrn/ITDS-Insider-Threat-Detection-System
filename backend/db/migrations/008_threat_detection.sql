@@ -53,21 +53,15 @@ CREATE TABLE IF NOT EXISTS `alerts` (
   CONSTRAINT `fk_alert_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Seed default user baselines for the 6 demo users
+-- Seed default user baselines for the 3 demo users
 INSERT INTO `user_baselines` (`user_id`, `avg_velocity_qpm`, `typical_tables`, `typical_hours_start`, `typical_hours_end`, `sample_size_queries`)
 SELECT id, 6.0, JSON_ARRAY('target_db.customers', 'target_db.orders'), 9, 18, 120
 FROM `users`
-WHERE `username` IN ('developer', 'analyst')
-ON DUPLICATE KEY UPDATE `avg_velocity_qpm` = VALUES(`avg_velocity_qpm`);
-
-INSERT INTO `user_baselines` (`user_id`, `avg_velocity_qpm`, `typical_tables`, `typical_hours_start`, `typical_hours_end`, `sample_size_queries`)
-SELECT id, 4.0, JSON_ARRAY('target_db.employees', 'target_db.departments', 'target_db.salaries'), 8, 17, 85
-FROM `users`
-WHERE `username` = 'hr_staff'
+WHERE `username` = 'developer'
 ON DUPLICATE KEY UPDATE `avg_velocity_qpm` = VALUES(`avg_velocity_qpm`);
 
 INSERT INTO `user_baselines` (`user_id`, `avg_velocity_qpm`, `typical_tables`, `typical_hours_start`, `typical_hours_end`, `sample_size_queries`)
 SELECT id, 10.0, JSON_ARRAY('target_db.employees', 'target_db.customers', 'target_db.orders', 'target_db.salaries', 'target_db.payments', 'target_db.departments'), 8, 20, 250
 FROM `users`
-WHERE `username` IN ('admin', 'dba', 'security_analyst')
+WHERE `username` IN ('admin', 'dba')
 ON DUPLICATE KEY UPDATE `avg_velocity_qpm` = VALUES(`avg_velocity_qpm`);

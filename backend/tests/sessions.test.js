@@ -8,7 +8,6 @@ import { env } from '../src/config/env.js';
 describe('Phase 5 JIT Sessions & MySQL User Provisioning Tests', () => {
   let adminToken = '';
   let devToken = '';
-  let hrToken = '';
 
   let autoApprovedCreds = null;
   let autoApprovedSessionId = null;
@@ -26,12 +25,6 @@ describe('Phase 5 JIT Sessions & MySQL User Provisioning Tests', () => {
       .post('/auth/login')
       .send({ username: 'developer', password: 'Password123!' });
     devToken = devRes.body.data.accessToken;
-
-    // 3. HR login
-    const hrRes = await request(app)
-      .post('/auth/login')
-      .send({ username: 'hr_staff', password: 'Password123!' });
-    hrToken = hrRes.body.data.accessToken;
   });
 
   afterAll(async () => {
@@ -121,10 +114,10 @@ describe('Phase 5 JIT Sessions & MySQL User Provisioning Tests', () => {
   });
 
   describe('Approval Queue Flow (HR Staff Payroll & Compensation)', () => {
-    it('hr_staff submits request for critical profile -> routed to pending queue by OPA', async () => {
+    it('developer submits request for critical profile -> routed to pending queue by OPA', async () => {
       const res = await request(app)
         .post('/access-requests')
-        .set('Authorization', `Bearer ${hrToken}`)
+        .set('Authorization', `Bearer ${devToken}`)
         .send({
           profile_id: 3, // HR Staff Payroll & Compensation
           requested_duration_minutes: 45,
