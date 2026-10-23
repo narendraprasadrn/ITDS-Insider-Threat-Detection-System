@@ -1,6 +1,8 @@
 // scripts/demo_reset.js
 import mysql from '../backend/node_modules/mysql2/promise.js';
 
+const DB_NAME = process.env.DB_NAME || 'itds_db';
+
 const DB_CONFIG = {
   host: process.env.DB_HOST || '127.0.0.1',
   port: parseInt(process.env.DB_PORT || '3306', 10),
@@ -11,7 +13,7 @@ const DB_CONFIG = {
 
 async function resetDemoEnvironment() {
   console.log('===========================================================');
-  console.log('     ITDS DEMO ENVIRONMENT RESET & PURGE UTILITY');
+  console.log(`     ITDS DEMO ENVIRONMENT RESET & PURGE UTILITY [${DB_NAME}]`);
   console.log('===========================================================\n');
 
   let connection;
@@ -33,7 +35,7 @@ async function resetDemoEnvironment() {
 
     try {
       const [sessUsers] = await connection.query(`
-        SELECT DISTINCT mysql_username FROM \`itds_app\`.\`db_sessions\`
+        SELECT DISTINCT mysql_username FROM \`${DB_NAME}\`.\`db_sessions\`
         WHERE mysql_username LIKE 'jit_%'
       `);
       sessUsers.forEach(r => usersToDrop.add(r.mysql_username));
@@ -76,8 +78,8 @@ async function resetDemoEnvironment() {
     await connection.query('FLUSH PRIVILEGES');
     console.log(`  ✓ Purged ${droppedCount} temporary MySQL user account(s).`);
 
-    // 2. Truncate operational telemetry and session tables in itds_app
-    console.log('\n[2/4] Truncating operational tables in `itds_app`...');
+    // 2. Truncate operational telemetry and session tables
+    console.log(`\n[2/4] Truncating operational tables in \`${DB_NAME}\`...`);
     await connection.query('SET FOREIGN_KEY_CHECKS = 0;');
 
     const tablesToTruncate = [
@@ -93,7 +95,7 @@ async function resetDemoEnvironment() {
     ];
 
     for (const table of tablesToTruncate) {
-      await connection.query(`TRUNCATE TABLE \`itds_app\`.\`${table}\`;`);
+      await connection.query(`TRUNCATE TABLE \`${DB_NAME}\`.\`${table}\`;`);
     }
 
     await connection.query('SET FOREIGN_KEY_CHECKS = 1;');
@@ -102,7 +104,7 @@ async function resetDemoEnvironment() {
     // 3. Reset ingestion watermark to current timestamp
     console.log('\n[3/4] Resetting general_log ingestion watermark...');
     await connection.query(`
-      INSERT INTO \`itds_app\`.\`ingest_watermark\` (id, last_event_time, last_thread_id)
+      INSERT INTO \`${DB_NAME}\`.\`ingest_watermark\` (id, last_event_time, last_thread_id)
       VALUES (1, CURRENT_TIMESTAMP, 0)
       ON DUPLICATE KEY UPDATE
         last_event_time = CURRENT_TIMESTAMP,
@@ -111,11 +113,11 @@ async function resetDemoEnvironment() {
     console.log('  ✓ Ingestion watermark advanced to CURRENT_TIMESTAMP.');
 
     // 4. Ensure pristine baseline definitions exist
-    console.log('\n[4/4] Re-syncing baseline profiles in `itds_app.user_baselines`...');
+    console.log(`\n[4/4] Re-syncing baseline profiles in \`${DB_NAME}.user_baselines\`...`);
     await connection.query(`
-      INSERT INTO \`itds_app\`.\`user_baselines\` (\`user_id\`, \`avg_velocity_qpm\`, \`typical_tables\`, \`typical_hours_start\`, \`typical_hours_end\`, \`sample_size_queries\`)
-      SELECT id, 6.0, JSON_ARRAY('FinanceCorpDB.Products', 'FinanceCorpDB.Orders', 'FinanceCorpDB.Customers'), 9, 18, 120
-      FROM \`itds_app\`.\`users\`
+      INSERT INTO \`${DB_NAME}\`.\`user_baselines\` (\`user_id\`, \`avg_velocity_qpm\`, \`typical_tables\`, \`typical_hours_start\`, \`typical_hours_end\`, \`sample_size_queries\`)
+      SELECT id, 6.0, JSON_ARRAY('${DB_NAME}.products', '${DB_NAME}.orders', '${DB_NAME}.customers'), 9, 18, 120
+      FROM \`${DB_NAME}\`.\`users\`
       WHERE \`username\` = 'developer'
       ON DUPLICATE KEY UPDATE
         \`avg_velocity_qpm\` = VALUES(\`avg_velocity_qpm\`),
@@ -125,9 +127,9 @@ async function resetDemoEnvironment() {
     `);
 
     await connection.query(`
-      INSERT INTO \`itds_app\`.\`user_baselines\` (\`user_id\`, \`avg_velocity_qpm\`, \`typical_tables\`, \`typical_hours_start\`, \`typical_hours_end\`, \`sample_size_queries\`)
-      SELECT id, 10.0, JSON_ARRAY('FinanceCorpDB.Employees', 'FinanceCorpDB.Customers', 'FinanceCorpDB.Transactions', 'FinanceCorpDB.Products', 'FinanceCorpDB.Orders', 'FinanceCorpDB.VendorContracts', 'FinanceCorpDB.BudgetReports'), 8, 20, 250
-      FROM \`itds_app\`.\`users\`
+      INSERT INTO \`${DB_NAME}\`.\`user_baselines\` (\`user_id\`, \`avg_velocity_qpm\`, \`typical_tables\`, \`typical_hours_start\`, \`typical_hours_end\`, \`sample_size_queries\`)
+      SELECT id, 10.0, JSON_ARRAY('${DB_NAME}.employees', '${DB_NAME}.customers', '${DB_NAME}.transactions', '${DB_NAME}.products', '${DB_NAME}.orders', '${DB_NAME}.vendorcontracts', '${DB_NAME}.budgetreports'), 8, 20, 250
+      FROM \`${DB_NAME}\`.\`users\`
       WHERE \`username\` IN ('admin', 'dba')
       ON DUPLICATE KEY UPDATE
         \`avg_velocity_qpm\` = VALUES(\`avg_velocity_qpm\`),
