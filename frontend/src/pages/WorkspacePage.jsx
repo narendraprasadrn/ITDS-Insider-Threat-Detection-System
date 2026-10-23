@@ -223,27 +223,46 @@ export default function WorkspacePage() {
       const targetProfile = availableProfiles.find(p => !p.requires_approval) || availableProfiles[0];
       const targetProfileId = targetProfile ? targetProfile.id : (isAdmin ? 7 : (isDba ? 3 : 1));
 
-      const res = await fetch('/api/requests', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          profile_id: targetProfileId,
-          requested_duration_minutes: 60,
-          justification: `Routine operational access activated by ${primaryRole} workspace console.`
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error?.message || 'Failed to activate role session');
+      let data;
+      if (isAdmin) {
+        const res = await fetch('/api/sessions/admin-provision', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            profile_id: targetProfileId,
+            duration_minutes: 60
+          })
+        });
+        data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error?.message || 'Failed to provision administrative session');
+        }
+      } else {
+        const res = await fetch('/api/access-requests', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            profile_id: targetProfileId,
+            requested_duration_minutes: 60,
+            justification: `Routine operational access activated by ${primaryRole} workspace console.`
+          })
+        });
+        data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error?.message || 'Failed to activate role session');
+        }
       }
 
       await fetchSessions();
-      if (data.data?.request?.session_id) {
-        setSelectedSessionId(String(data.data.request.session_id));
+      const newSessionId = data.data?.sessionId || data.data?.session_id || data.data?.request?.session_id;
+      if (newSessionId) {
+        setSelectedSessionId(String(newSessionId));
       }
     } catch (err) {
       setError(err.message);

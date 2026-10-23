@@ -23,6 +23,7 @@ router.use('/resources', resourceRoutes);
 router.use('/profiles', profileRoutes);
 router.use('/policy', policyRoutes);
 router.use('/access-requests', accessRequestRoutes);
+router.use('/requests', accessRequestRoutes);
 router.use('/sessions', sessionRoutes);
 router.use('/workspace', workspaceRoutes);
 router.use('/sql-events', sqlEventRoutes);

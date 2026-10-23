@@ -4,12 +4,13 @@ import { accessRequestService } from '../services/accessRequest.service.js';
 export const accessRequestController = {
   async createRequest(req, res, next) {
     try {
-      const { profile_id, requested_duration_minutes, justification } = req.body;
+      const { profile_id, requested_duration_minutes, justification, time_of_day } = req.body;
       const result = await accessRequestService.createRequest({
         user: req.user,
         profileId: profile_id,
         requestedDurationMinutes: requested_duration_minutes,
         justification,
+        timeOfDay: time_of_day,
         req
       });
 

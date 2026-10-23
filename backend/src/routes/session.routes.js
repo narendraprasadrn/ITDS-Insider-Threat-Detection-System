@@ -20,4 +20,7 @@ router.get('/:id', authenticate, sessionController.getSessionById);
 // Admin / DBA force-revoke session
 router.post('/:id/revoke', authenticate, requireRole('admin', 'dba'), sessionController.revoke);
 
+// Explicit administrative database access (bypasses employee approval queue)
+router.post('/admin-provision', authenticate, requireRole('admin'), sessionController.provisionAdminSession);
+
 export default router;

@@ -30,6 +30,7 @@ app.use('/auth', authRoutes);
 app.use('/profiles', profileRoutes);
 app.use('/policy', policyRoutes);
 app.use('/access-requests', accessRequestRoutes);
+app.use('/requests', accessRequestRoutes);
 app.use('/sessions', sessionRoutes);
 app.use('/workspace', workspaceRoutes);
 app.use('/sql-events', sqlEventRoutes);

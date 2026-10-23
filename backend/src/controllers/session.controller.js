@@ -78,5 +78,22 @@ export const sessionController = {
     } catch (err) {
       next(err);
     }
+  },
+
+  async provisionAdminSession(req, res, next) {
+    try {
+      const { profile_id, duration_minutes } = req.body || {};
+      const result = await sessionService.provisionAdminSession({
+        adminUser: req.user,
+        profileId: profile_id,
+        durationMinutes: duration_minutes
+      });
+      res.status(201).json({
+        success: true,
+        data: result
+      });
+    } catch (err) {
+      next(err);
+    }
   }
 };

@@ -4,6 +4,7 @@ import { pool } from '../db/pool.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { auditService } from './audit.service.js';
+import { profileService } from './profile.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 export const sessionService = {
@@ -90,6 +91,96 @@ export const sessionService = {
         expiresAt: endTime.toISOString(),
         durationMinutes
       }
+    };
+  },
+
+  /**
+   * Explicit Administrative Database Access Mechanism
+   * Bypasses the employee approval queue under administrative authorization policy.
+   * Directly provisions a least-privilege, time-bounded MySQL user for administrators.
+   */
+  async provisionAdminSession({ adminUser, profileId = 7, durationMinutes = 60 }) {
+    if (!adminUser.roles.includes('admin')) {
+      throw new AppError('Administrative provisioning is strictly restricted to administrators', 403, 'FORBIDDEN');
+    }
+
+    const targetProfileId = profileId ? Number(profileId) : 7;
+    const profile = await profileService.getProfile(targetProfileId);
+
+    // If an elevated or sensitive administrative operation requires independent approval, enforce second-person approval
+    if (profile.requires_approval) {
+      throw new AppError(
+        `Profile '${profile.name}' is an elevated/sensitive profile requiring independent second-person approval. It cannot be directly provisioned.`,
+        400,
+        'INDEPENDENT_APPROVAL_REQUIRED'
+      );
+    }
+
+    const maxAllowed = profile.max_duration_minutes || 60;
+    const duration = Math.min(Math.max(Number(durationMinutes) || maxAllowed, 15), maxAllowed);
+
+    const requestedOpsJson = JSON.stringify(profile.allowed_operations || ['SELECT']);
+    const requestedResJson = JSON.stringify(profile.resources.map(r => `${r.db_name}.${r.table_name}`));
+
+    // Atomically create an approved access_requests record for lifecycle traceability and DB integrity
+    const [reqResult] = await pool.execute(
+      `INSERT INTO access_requests (
+         user_id, profile_id, requested_duration_minutes, justification,
+         status, decision_action, decision_reasons,
+         requested_operations, requested_resources,
+         approved_by, approved_at, activated_at
+       ) VALUES (?, ?, ?, ?, 'active', 'allow', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [
+        adminUser.id,
+        profile.id,
+        duration,
+        `Direct administrative database access authorized under ITDS administrative policy for ${adminUser.username}`,
+        JSON.stringify(['Administrative authorization policy bypasses employee approval queue']),
+        requestedOpsJson,
+        requestedResJson,
+        adminUser.id
+      ]
+    );
+
+    const requestId = reqResult.insertId;
+
+    // Provision ephemeral MySQL credentials
+    const sessionResult = await this.provisionSession({
+      requestId,
+      userId: adminUser.id,
+      profile,
+      durationMinutes: duration
+    });
+
+    const endTime = new Date(Date.now() + duration * 60 * 1000);
+
+    // Update access_requests with session_id and expires_at
+    await pool.execute(
+      `UPDATE access_requests SET session_id = ?, expires_at = ? WHERE id = ?`,
+      [sessionResult.sessionId, endTime, requestId]
+    );
+
+    // Audit log
+    await auditService.log({
+      eventType: 'ADMIN_SESSION_PROVISIONED',
+      userId: adminUser.id,
+      username: adminUser.username,
+      status: 'SUCCESS',
+      details: {
+        sessionId: sessionResult.sessionId,
+        requestId,
+        profileName: profile.name,
+        durationMinutes: duration,
+        mysqlUsername: sessionResult.credentials.username
+      }
+    });
+
+    return {
+      success: true,
+      status: 'active',
+      sessionId: sessionResult.sessionId,
+      requestId,
+      credentials: sessionResult.credentials
     };
   },
 

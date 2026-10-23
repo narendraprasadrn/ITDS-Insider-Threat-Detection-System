@@ -13,7 +13,7 @@ export const accessRequestService = {
    * - PENDING (if OPA indicates approval is required)
    * - DENIED (if OPA or RBAC denies)
    */
-  async createRequest({ user, profileId, requestedDurationMinutes, justification, req = null }) {
+  async createRequest({ user, profileId, requestedDurationMinutes, justification, timeOfDay: overrideTimeOfDay, req = null }) {
     if (!profileId) {
       throw new AppError('Profile ID is required', 400, 'BAD_REQUEST');
     }
@@ -62,7 +62,7 @@ export const accessRequestService = {
 
     // Current time HH:MM format for OPA business hours check
     const now = new Date();
-    const timeOfDay = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const timeOfDay = overrideTimeOfDay || `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
     // 4. Construct OPA Input
     const opaInput = {
@@ -324,123 +324,149 @@ export const accessRequestService = {
 
   /**
    * Admin/DBA approves pending request -> provisions JIT session and activates
+   * Protected with database transaction and row-level locking to prevent race conditions.
    */
   async approveRequest(requestId, decidingUser, comments = '') {
-    const [reqRows] = await pool.execute(
-      `SELECT id, user_id, profile_id, requested_duration_minutes, status
-       FROM access_requests WHERE id = ? LIMIT 1`,
-      [requestId]
-    );
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
 
-    if (reqRows.length === 0) {
-      throw new AppError('Access request not found', 404, 'NOT_FOUND');
-    }
-
-    const accessReq = reqRows[0];
-    if (accessReq.status !== 'pending') {
-      throw new AppError(`Cannot approve request with status '${accessReq.status}'`, 400, 'BAD_REQUEST');
-    }
-
-    // Enforce separation of duties: prevent self-approval on approval-mandated requests
-    if (accessReq.user_id === decidingUser.id) {
-      throw new AppError(
-        'Self-approval is strictly prohibited. Requests requiring independent review must be approved by another administrator or DBA.',
-        403,
-        'FORBIDDEN_SELF_APPROVAL'
+      const [reqRows] = await conn.execute(
+        `SELECT id, user_id, profile_id, requested_duration_minutes, status
+         FROM access_requests WHERE id = ? FOR UPDATE`,
+        [requestId]
       );
-    }
 
-    // 1. Fetch profile and provision session
-    const profile = await profileService.getProfile(accessReq.profile_id);
-    const sessionResult = await sessionService.provisionSession({
-      requestId,
-      userId: accessReq.user_id,
-      profile,
-      durationMinutes: accessReq.requested_duration_minutes
-    });
+      if (reqRows.length === 0) {
+        throw new AppError('Access request not found', 404, 'NOT_FOUND');
+      }
 
-    const endTime = new Date(Date.now() + accessReq.requested_duration_minutes * 60 * 1000);
+      const accessReq = reqRows[0];
+      if (accessReq.status !== 'pending') {
+        throw new AppError(`Cannot approve request with status '${accessReq.status}'`, 400, 'BAD_REQUEST');
+      }
 
-    // 2. Update status and link session ID in access_requests
-    await pool.execute(
-      `UPDATE access_requests
-       SET status = 'active',
-           session_id = ?,
-           approved_by = ?,
-           approved_at = CURRENT_TIMESTAMP,
-           activated_at = CURRENT_TIMESTAMP,
-           expires_at = ?
-       WHERE id = ?`,
-      [sessionResult.sessionId, decidingUser.id, endTime, requestId]
-    );
+      // Enforce separation of duties: prevent self-approval on approval-mandated requests
+      if (accessReq.user_id === decidingUser.id) {
+        throw new AppError(
+          'Self-approval is strictly prohibited. Requests requiring independent review must be approved by another administrator or DBA.',
+          403,
+          'FORBIDDEN_SELF_APPROVAL'
+        );
+      }
 
-    // 3. Record approval record in approvals table
-    await pool.execute(
-      `INSERT INTO approvals (request_id, decided_by, decision, comments) VALUES (?, ?, 'approved', ?)`,
-      [requestId, decidingUser.id, comments]
-    );
+      // 1. Fetch profile and provision session
+      const profile = await profileService.getProfile(accessReq.profile_id);
+      const sessionResult = await sessionService.provisionSession({
+        requestId,
+        userId: accessReq.user_id,
+        profile,
+        durationMinutes: accessReq.requested_duration_minutes
+      });
 
-    await auditService.log({
-      eventType: 'ACCESS_REQUEST_APPROVED',
-      userId: accessReq.user_id,
-      username: decidingUser.username,
-      status: 'SUCCESS',
-      details: {
+      const endTime = new Date(Date.now() + accessReq.requested_duration_minutes * 60 * 1000);
+
+      // 2. Update status and link session ID in access_requests
+      await conn.execute(
+        `UPDATE access_requests
+         SET status = 'active',
+             session_id = ?,
+             approved_by = ?,
+             approved_at = CURRENT_TIMESTAMP,
+             activated_at = CURRENT_TIMESTAMP,
+             expires_at = ?
+         WHERE id = ?`,
+        [sessionResult.sessionId, decidingUser.id, endTime, requestId]
+      );
+
+      // 3. Record approval record in approvals table
+      await conn.execute(
+        `INSERT INTO approvals (request_id, decided_by, decision, comments) VALUES (?, ?, 'approved', ?)`,
+        [requestId, decidingUser.id, comments]
+      );
+
+      await conn.commit();
+
+      await auditService.log({
+        eventType: 'ACCESS_REQUEST_APPROVED',
+        userId: accessReq.user_id,
+        username: decidingUser.username,
+        status: 'SUCCESS',
+        details: {
+          requestId,
+          sessionId: sessionResult.sessionId,
+          approvedBy: decidingUser.username,
+          comments
+        }
+      });
+
+      return {
+        success: true,
         requestId,
         sessionId: sessionResult.sessionId,
-        approvedBy: decidingUser.username,
-        comments
-      }
-    });
-
-    return {
-      success: true,
-      requestId,
-      sessionId: sessionResult.sessionId,
-      credentials: sessionResult.credentials
-    };
+        credentials: sessionResult.credentials
+      };
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
   },
 
   /**
    * Admin/DBA denies pending request
+   * Protected with database transaction and row-level locking.
    */
   async denyRequest(requestId, decidingUser, comments = '') {
-    const [reqRows] = await pool.execute(
-      `SELECT id, user_id, status FROM access_requests WHERE id = ? LIMIT 1`,
-      [requestId]
-    );
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
 
-    if (reqRows.length === 0) {
-      throw new AppError('Access request not found', 404, 'NOT_FOUND');
+      const [reqRows] = await conn.execute(
+        `SELECT id, user_id, status FROM access_requests WHERE id = ? FOR UPDATE`,
+        [requestId]
+      );
+
+      if (reqRows.length === 0) {
+        throw new AppError('Access request not found', 404, 'NOT_FOUND');
+      }
+
+      const accessReq = reqRows[0];
+      if (accessReq.status !== 'pending') {
+        throw new AppError(`Cannot deny request with status '${accessReq.status}'`, 400, 'BAD_REQUEST');
+      }
+
+      await conn.execute(
+        `UPDATE access_requests
+         SET status = 'denied',
+             approved_by = ?,
+             approved_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [decidingUser.id, requestId]
+      );
+
+      await conn.execute(
+        `INSERT INTO approvals (request_id, decided_by, decision, comments) VALUES (?, ?, 'denied', ?)`,
+        [requestId, decidingUser.id, comments]
+      );
+
+      await conn.commit();
+
+      await auditService.log({
+        eventType: 'ACCESS_REQUEST_DENIED',
+        userId: accessReq.user_id,
+        username: decidingUser.username,
+        status: 'WARNING',
+        details: { requestId, deniedBy: decidingUser.username, comments }
+      });
+
+      return { success: true, requestId, message: 'Access request denied' };
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
     }
-
-    const accessReq = reqRows[0];
-    if (accessReq.status !== 'pending') {
-      throw new AppError(`Cannot deny request with status '${accessReq.status}'`, 400, 'BAD_REQUEST');
-    }
-
-    await pool.execute(
-      `UPDATE access_requests
-       SET status = 'denied',
-           approved_by = ?,
-           approved_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [decidingUser.id, requestId]
-    );
-
-    await pool.execute(
-      `INSERT INTO approvals (request_id, decided_by, decision, comments) VALUES (?, ?, 'denied', ?)`,
-      [requestId, decidingUser.id, comments]
-    );
-
-    await auditService.log({
-      eventType: 'ACCESS_REQUEST_DENIED',
-      userId: accessReq.user_id,
-      username: decidingUser.username,
-      status: 'WARNING',
-      details: { requestId, deniedBy: decidingUser.username, comments }
-    });
-
-    return { success: true, requestId, message: 'Access request denied' };
   }
 };
