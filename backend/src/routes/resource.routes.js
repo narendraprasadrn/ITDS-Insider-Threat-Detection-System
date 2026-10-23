@@ -5,8 +5,8 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-// List resources (admin, dba)
-router.get('/', authenticate, requireRole('admin', 'dba'), resourceController.listResources);
+// List resources (all authenticated roles can inspect database catalog resources)
+router.get('/', authenticate, resourceController.listResources);
 router.get('/:id', authenticate, resourceController.getResource);
 
 // Resource management is admin only

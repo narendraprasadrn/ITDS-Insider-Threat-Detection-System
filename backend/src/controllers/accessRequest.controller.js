@@ -4,15 +4,29 @@ import { accessRequestService } from '../services/accessRequest.service.js';
 export const accessRequestController = {
   async createRequest(req, res, next) {
     try {
-      const { profile_id, requested_duration_minutes, justification, time_of_day } = req.body;
-      const result = await accessRequestService.createRequest({
-        user: req.user,
-        profileId: profile_id,
-        requestedDurationMinutes: requested_duration_minutes,
-        justification,
-        timeOfDay: time_of_day,
-        req
-      });
+      const { request_type, target_table, operations, profile_id, requested_duration_minutes, justification, time_of_day } = req.body;
+      let result;
+
+      if (request_type === 'table' || target_table) {
+        result = await accessRequestService.createTableRequest({
+          user: req.user,
+          targetTable: target_table,
+          operations,
+          requestedDurationMinutes: requested_duration_minutes,
+          justification,
+          timeOfDay: time_of_day,
+          req
+        });
+      } else {
+        result = await accessRequestService.createRequest({
+          user: req.user,
+          profileId: profile_id,
+          requestedDurationMinutes: requested_duration_minutes,
+          justification,
+          timeOfDay: time_of_day,
+          req
+        });
+      }
 
       const statusCode = result.status === 'active' || result.status === 'approved' ? 201 : 200;
       res.status(statusCode).json({

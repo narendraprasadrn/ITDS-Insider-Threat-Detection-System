@@ -214,3 +214,51 @@ test_deny_unbounded_critical_read if {
     res.outcome == "DENY"
     "UNBOUNDED_BULK_READ" in res.violations
 }
+
+# Test 10: Deny destructive DROP TABLE even if user has DDL grant
+test_deny_destructive_drop_table if {
+    input_doc := {
+        "session": {
+            "granted_operations": ["SELECT", "INSERT", "UPDATE", "DELETE", "DDL"],
+            "granted_resources": ["target_db.customers"],
+            "profile_name": "Admin Security Administration",
+            "is_expired": false
+        },
+        "query": {
+            "operation": "DROP",
+            "tables": ["target_db.customers"],
+            "has_where": false,
+            "select_star": false,
+            "has_limit": false,
+            "is_ddl": true
+        }
+    }
+    res := query.result with input as input_doc
+    res.allow == false
+    res.outcome == "DENY"
+    "PROHIBITED_DESTRUCTIVE_DDL" in res.violations
+}
+
+# Test 11: Deny internal system schema access (e.g. mysql.user)
+test_deny_system_schema_access if {
+    input_doc := {
+        "session": {
+            "granted_operations": ["SELECT"],
+            "granted_resources": ["target_db.customers"],
+            "profile_name": "Admin Security Administration",
+            "is_expired": false
+        },
+        "query": {
+            "operation": "SELECT",
+            "tables": ["mysql.user"],
+            "has_where": false,
+            "select_star": true,
+            "has_limit": true,
+            "is_ddl": false
+        }
+    }
+    res := query.result with input as input_doc
+    res.allow == false
+    res.outcome == "DENY"
+    "SYSTEM_SCHEMA_ACCESS_DENIED" in res.violations
+}

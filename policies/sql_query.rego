@@ -90,6 +90,28 @@ violations contains violation if {
     }
 }
 
+# Destructive DROP operations are strictly prohibited across all users and profiles
+violations contains violation if {
+    input.query.operation == "DROP"
+    violation := {
+        "rule": "PROHIBITED_DESTRUCTIVE_DDL",
+        "severity": "critical",
+        "reason": "Destructive DROP statements against production catalog tables are strictly prohibited by security policy"
+    }
+}
+
+# Direct access to MySQL system schemas is strictly prohibited
+violations contains violation if {
+    some t in input.query.tables
+    some system_prefix in ["mysql.", "information_schema.", "performance_schema.", "sys."]
+    startswith(lower(t), system_prefix)
+    violation := {
+        "rule": "SYSTEM_SCHEMA_ACCESS_DENIED",
+        "severity": "critical",
+        "reason": "Direct access to internal MySQL system schemas is prohibited"
+    }
+}
+
 # Unbounded bulk read on critical tables (severity: critical -> triggers DENY)
 violations contains violation if {
     input.query.operation == "SELECT"

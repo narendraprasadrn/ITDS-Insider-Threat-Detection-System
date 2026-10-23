@@ -431,7 +431,11 @@ export default function SessionsPage() {
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{req.profile_name}</Typography>
-                    <Chip size="small" label={`Risk: ${req.risk_level}`} color="error" variant="outlined" sx={{ height: 18, fontSize: '0.65rem' }} />
+                    {req.request_type === 'table' ? (
+                      <Chip size="small" label={`Table Grant: ${req.target_table}`} color="info" variant="outlined" sx={{ height: 18, fontSize: '0.65rem' }} />
+                    ) : (
+                      <Chip size="small" label={`Risk: ${req.risk_level}`} color="error" variant="outlined" sx={{ height: 18, fontSize: '0.65rem' }} />
+                    )}
                   </TableCell>
                   <TableCell>{req.requested_duration_minutes} min</TableCell>
                   <TableCell sx={{ maxWidth: 260 }}>
@@ -447,6 +451,17 @@ export default function SessionsPage() {
                           size="small"
                           variant="outlined"
                           color="warning"
+                          sx={{ fontSize: '0.65rem', height: 22, fontWeight: 600 }}
+                        />
+                      </Tooltip>
+                    ) : (!isAdmin && (req.risk_level === 'critical' || ['Payroll', 'TaxRecords', 'SecurityAuditLogs'].includes(req.target_table))) ? (
+                      <Tooltip title="This request involves critical sensitivity resources (Payroll, TaxRecords, or SecurityAuditLogs). Only an Administrator can approve.">
+                        <Chip
+                          icon={<BootstrapIcon name="bi-shield-lock" size={12} />}
+                          label="Admin Only (Critical)"
+                          size="small"
+                          variant="outlined"
+                          color="error"
                           sx={{ fontSize: '0.65rem', height: 22, fontWeight: 600 }}
                         />
                       </Tooltip>
@@ -538,13 +553,23 @@ export default function SessionsPage() {
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{req.profile_name}</Typography>
-                    <Chip
-                      size="small"
-                      label={req.requires_approval ? 'Approval Required' : 'Auto-Approve'}
-                      color={req.requires_approval ? 'warning' : 'success'}
-                      variant="outlined"
-                      sx={{ height: 16, fontSize: '0.6rem', mt: 0.3 }}
-                    />
+                    {req.request_type === 'table' ? (
+                      <Chip
+                        size="small"
+                        label={`Table Grant: ${req.target_table}`}
+                        color="info"
+                        variant="outlined"
+                        sx={{ height: 16, fontSize: '0.6rem', mt: 0.3 }}
+                      />
+                    ) : (
+                      <Chip
+                        size="small"
+                        label={req.requires_approval ? 'Approval Required' : 'Auto-Approve'}
+                        color={req.requires_approval ? 'warning' : 'success'}
+                        variant="outlined"
+                        sx={{ height: 16, fontSize: '0.6rem', mt: 0.3 }}
+                      />
+                    )}
                   </TableCell>
                   <TableCell>{req.requested_duration_minutes} min</TableCell>
                   <TableCell>
@@ -604,6 +629,17 @@ export default function SessionsPage() {
                             size="small"
                             variant="outlined"
                             color="warning"
+                            sx={{ fontSize: '0.65rem', height: 22, fontWeight: 600 }}
+                          />
+                        </Tooltip>
+                      ) : (!isAdmin && (req.risk_level === 'critical' || ['Payroll', 'TaxRecords', 'SecurityAuditLogs'].includes(req.target_table))) ? (
+                        <Tooltip title="This request involves critical sensitivity resources (Payroll, TaxRecords, or SecurityAuditLogs). Only an Administrator can approve.">
+                          <Chip
+                            icon={<BootstrapIcon name="bi-shield-lock" size={12} />}
+                            label="Admin Only (Critical)"
+                            size="small"
+                            variant="outlined"
+                            color="error"
                             sx={{ fontSize: '0.65rem', height: 22, fontWeight: 600 }}
                           />
                         </Tooltip>

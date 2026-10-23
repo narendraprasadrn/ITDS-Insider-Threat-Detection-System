@@ -103,10 +103,10 @@ export const accessRequestService = {
     // 6. Record request in database
     const [result] = await pool.execute(
       `INSERT INTO access_requests (
-         user_id, profile_id, requested_duration_minutes, justification,
+         user_id, request_type, profile_id, requested_duration_minutes, justification,
          status, decision_action, decision_reasons,
          requested_operations, requested_resources
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, 'profile', ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         user.id,
         profile.id,
@@ -167,17 +167,19 @@ export const accessRequestService = {
     }
 
     // 8. If pending, check whether independent approvers exist in the system (other than requester)
+    const hasCritical = profile.resources.some(r => r.sensitivity === 'critical');
+    const approverRoleFilter = hasCritical ? "r.name = 'admin'" : "r.name IN ('admin', 'dba')";
+
     const [otherApprovers] = await pool.query(
       `SELECT count(DISTINCT u.id) as count
        FROM users u
        JOIN user_roles ur ON u.id = ur.user_id
        JOIN roles r ON ur.role_id = r.id
-       WHERE r.name IN ('admin', 'dba') AND u.id != ? AND u.is_active = 1`,
+       WHERE ${approverRoleFilter} AND u.id != ? AND u.is_active = 1`,
       [user.id]
     );
     const hasIndependentApprover = Number(otherApprovers[0]?.count || 0) > 0;
 
-    // If pending or denied
     return {
       status: initialStatus,
       requestId,
@@ -185,9 +187,117 @@ export const accessRequestService = {
       has_independent_approver: hasIndependentApprover,
       message: initialStatus === 'pending'
         ? (hasIndependentApprover
-            ? 'Request submitted to independent administrator approval queue.'
+            ? `Request submitted to independent ${hasCritical ? 'Administrator' : 'approver'} queue.`
             : 'Request submitted, but no independent approver is currently configured in the system.')
         : `Request denied by policy: ${decision.reasons?.join(', ')}`
+    };
+  },
+
+  /**
+   * Submit a table-level access request (e.g. Developer requesting Employees, Transactions, etc.)
+   */
+  async createTableRequest({ user, targetTable, operations = ['SELECT'], requestedDurationMinutes, justification, timeOfDay: overrideTimeOfDay, req = null }) {
+    if (!targetTable || !targetTable.trim()) {
+      throw new AppError('Target table is required for table-level access request', 400, 'BAD_REQUEST');
+    }
+    const cleanTable = targetTable.trim();
+
+    // 1. Verify table exists in registered catalog
+    const [resRows] = await pool.execute(
+      `SELECT id, db_name, table_name, sensitivity, description FROM resources WHERE LOWER(table_name) = LOWER(?) LIMIT 1`,
+      [cleanTable]
+    );
+
+    if (resRows.length === 0) {
+      throw new AppError(`Table '${cleanTable}' is not a registered database catalog resource`, 404, 'TABLE_NOT_FOUND');
+    }
+
+    const resource = resRows[0];
+    const tableName = resource.table_name;
+    const isCritical = ['Payroll', 'TaxRecords', 'SecurityAuditLogs'].includes(tableName) || resource.sensitivity === 'critical';
+
+    // Business justification is mandatory for table-level requests
+    if (!justification || !justification.trim()) {
+      throw new AppError('Business justification is required for table-level access requests', 400, 'JUSTIFICATION_REQUIRED');
+    }
+
+    // Clamp duration (critical tables max 60 min, other tables max 120 min)
+    const maxPermitted = isCritical ? 60 : 120;
+    const duration = Math.min(
+      Math.max(Number(requestedDurationMinutes) || 60, 15),
+      maxPermitted
+    );
+
+    const targetOps = Array.isArray(operations) && operations.length > 0 ? operations : ['SELECT'];
+
+    const decision = {
+      action: 'require_approval',
+      reasons: [
+        isCritical
+          ? `Access involves critical sensitivity table '${tableName}' requiring Administrator approval`
+          : `Table-level access to '${tableName}' (${resource.sensitivity} sensitivity) requires supervisor review`
+      ]
+    };
+
+    const requestedOpsJson = JSON.stringify(targetOps);
+    const requestedResJson = JSON.stringify([`${resource.db_name}.${tableName}`]);
+
+    const [result] = await pool.execute(
+      `INSERT INTO access_requests (
+         user_id, request_type, target_table, target_database, requested_duration_minutes, justification,
+         status, decision_action, decision_reasons,
+         requested_operations, requested_resources
+       ) VALUES (?, 'table', ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+      [
+        user.id,
+        tableName,
+        resource.db_name,
+        duration,
+        justification.trim(),
+        decision.action,
+        JSON.stringify(decision.reasons),
+        requestedOpsJson,
+        requestedResJson
+      ]
+    );
+
+    const requestId = result.insertId;
+
+    await auditService.log({
+      eventType: 'ACCESS_REQUEST_SUBMITTED',
+      userId: user.id,
+      username: user.username,
+      status: 'SUCCESS',
+      details: {
+        requestId,
+        requestType: 'table',
+        targetTable: tableName,
+        isCritical,
+        decisionAction: decision.action
+      },
+      req
+    });
+
+    const [otherApprovers] = await pool.query(
+      `SELECT count(DISTINCT u.id) as count
+       FROM users u
+       JOIN user_roles ur ON u.id = ur.user_id
+       JOIN roles r ON ur.role_id = r.id
+       WHERE ${isCritical ? "r.name = 'admin'" : "r.name IN ('admin', 'dba')"} AND u.id != ? AND u.is_active = 1`,
+      [user.id]
+    );
+    const hasIndependentApprover = Number(otherApprovers[0]?.count || 0) > 0;
+
+    return {
+      status: 'pending',
+      requestId,
+      request_type: 'table',
+      target_table: tableName,
+      decision,
+      has_independent_approver: hasIndependentApprover,
+      message: hasIndependentApprover
+        ? `Request for table '${tableName}' submitted to ${isCritical ? 'Administrator' : 'DBA / Administrator'} approval queue.`
+        : 'Request submitted, but no independent approver is currently configured.'
     };
   },
 
@@ -198,7 +308,8 @@ export const accessRequestService = {
     const isElevated = user.roles.some(r => r === 'admin' || r === 'dba');
 
     let sql = `
-      SELECT ar.id, ar.user_id, ar.profile_id, ar.session_id,
+      SELECT ar.id, ar.user_id, ar.request_type, ar.target_table, ar.target_database,
+             ar.profile_id, ar.session_id,
              ar.approved_by, ar.approved_at, ar.activated_at, ar.expires_at,
              ar.revoked_at, ar.revoked_by,
              ar.requested_duration_minutes, ar.justification,
@@ -206,16 +317,21 @@ export const accessRequestService = {
              ar.requested_operations, ar.requested_resources,
              ar.created_at, ar.updated_at,
              u.username, u.full_name, u.email,
-             p.name AS profile_name, p.risk_level, p.allowed_operations, p.requires_approval,
+             COALESCE(p.name, CONCAT('Table Access: ', ar.target_table)) AS profile_name,
+             COALESCE(p.risk_level, CASE WHEN ar.target_table IN ('Payroll', 'TaxRecords', 'SecurityAuditLogs') THEN 'critical' ELSE 'medium' END) AS risk_level,
+             p.allowed_operations, p.requires_approval,
              approver.username AS approved_by_username,
              ds.mysql_username, ds.status AS session_status,
              (SELECT count(DISTINCT u2.id) FROM users u2
               JOIN user_roles ur2 ON u2.id = ur2.user_id
               JOIN roles r2 ON ur2.role_id = r2.id
-              WHERE r2.name IN ('admin', 'dba') AND u2.id != ar.user_id AND u2.is_active = 1) AS independent_approver_count
+              WHERE (
+                (ar.target_table IN ('Payroll', 'TaxRecords', 'SecurityAuditLogs') AND r2.name = 'admin')
+                OR (COALESCE(ar.target_table, '') NOT IN ('Payroll', 'TaxRecords', 'SecurityAuditLogs') AND r2.name IN ('admin', 'dba'))
+              ) AND u2.id != ar.user_id AND u2.is_active = 1) AS independent_approver_count
       FROM access_requests ar
       JOIN users u ON ar.user_id = u.id
-      JOIN access_profiles p ON ar.profile_id = p.id
+      LEFT JOIN access_profiles p ON ar.profile_id = p.id
       LEFT JOIN users approver ON ar.approved_by = approver.id
       LEFT JOIN db_sessions ds ON ar.session_id = ds.id
       WHERE 1=1
@@ -254,7 +370,8 @@ export const accessRequestService = {
     const isElevated = user.roles.some(r => r === 'admin' || r === 'dba');
 
     const [rows] = await pool.execute(
-      `SELECT ar.id, ar.user_id, ar.profile_id, ar.session_id,
+      `SELECT ar.id, ar.user_id, ar.request_type, ar.target_table, ar.target_database,
+              ar.profile_id, ar.session_id,
               ar.approved_by, ar.approved_at, ar.activated_at, ar.expires_at,
               ar.revoked_at, ar.revoked_by,
               ar.requested_duration_minutes, ar.justification,
@@ -262,12 +379,13 @@ export const accessRequestService = {
               ar.requested_operations, ar.requested_resources,
               ar.created_at, ar.updated_at,
               u.username, u.full_name, u.email,
-              p.name AS profile_name, p.risk_level,
+              COALESCE(p.name, CONCAT('Table Access: ', ar.target_table)) AS profile_name,
+              COALESCE(p.risk_level, CASE WHEN ar.target_table IN ('Payroll', 'TaxRecords', 'SecurityAuditLogs') THEN 'critical' ELSE 'medium' END) AS risk_level,
               approver.username AS approved_by_username,
               ds.mysql_username, ds.status AS session_status, ds.end_time AS session_end_time
        FROM access_requests ar
        JOIN users u ON ar.user_id = u.id
-       JOIN access_profiles p ON ar.profile_id = p.id
+       LEFT JOIN access_profiles p ON ar.profile_id = p.id
        LEFT JOIN users approver ON ar.approved_by = approver.id
        LEFT JOIN db_sessions ds ON ar.session_id = ds.id
        WHERE ar.id = ? LIMIT 1`,
@@ -296,26 +414,32 @@ export const accessRequestService = {
    */
   async listPendingRequests() {
     const [rows] = await pool.query(
-      `SELECT ar.id, ar.user_id, ar.profile_id, ar.requested_duration_minutes,
+      `SELECT ar.id, ar.user_id, ar.request_type, ar.target_table, ar.target_database,
+              ar.profile_id, ar.requested_duration_minutes,
               ar.justification, ar.status, ar.decision_action, ar.decision_reasons,
               ar.requested_operations, ar.requested_resources,
               ar.created_at,
               u.username, u.full_name, u.email,
-              p.name AS profile_name, p.risk_level, p.allowed_operations, p.requires_approval,
+              COALESCE(p.name, CONCAT('Table Access: ', ar.target_table)) AS profile_name,
+              COALESCE(p.risk_level, CASE WHEN ar.target_table IN ('Payroll', 'TaxRecords', 'SecurityAuditLogs') THEN 'critical' ELSE 'medium' END) AS risk_level,
+              p.allowed_operations, p.requires_approval,
               (SELECT count(DISTINCT u2.id) FROM users u2
                JOIN user_roles ur2 ON u2.id = ur2.user_id
                JOIN roles r2 ON ur2.role_id = r2.id
-               WHERE r2.name IN ('admin', 'dba') AND u2.id != ar.user_id AND u2.is_active = 1) AS independent_approver_count
+               WHERE (
+                 (ar.target_table IN ('Payroll', 'TaxRecords', 'SecurityAuditLogs') AND r2.name = 'admin')
+                 OR (COALESCE(ar.target_table, '') NOT IN ('Payroll', 'TaxRecords', 'SecurityAuditLogs') AND r2.name IN ('admin', 'dba'))
+               ) AND u2.id != ar.user_id AND u2.is_active = 1) AS independent_approver_count
        FROM access_requests ar
        JOIN users u ON ar.user_id = u.id
-       JOIN access_profiles p ON ar.profile_id = p.id
+       LEFT JOIN access_profiles p ON ar.profile_id = p.id
        WHERE ar.status = 'pending'
        ORDER BY ar.created_at ASC`
     );
 
     return rows.map(r => ({
       ...r,
-      allowed_operations: typeof r.allowed_operations === 'string' ? JSON.parse(r.allowed_operations) : r.allowed_operations,
+      allowed_operations: typeof r.allowed_operations === 'string' ? JSON.parse(r.allowed_operations) : (r.allowed_operations || ['SELECT']),
       requested_operations: typeof r.requested_operations === 'string' ? JSON.parse(r.requested_operations) : (r.requested_operations || []),
       requested_resources: typeof r.requested_resources === 'string' ? JSON.parse(r.requested_resources) : (r.requested_resources || []),
       decision_reasons: typeof r.decision_reasons === 'string' ? JSON.parse(r.decision_reasons) : r.decision_reasons
@@ -332,7 +456,8 @@ export const accessRequestService = {
       await conn.beginTransaction();
 
       const [reqRows] = await conn.execute(
-        `SELECT id, user_id, profile_id, requested_duration_minutes, status
+        `SELECT id, user_id, request_type, target_table, target_database, profile_id,
+                requested_duration_minutes, status, requested_operations, requested_resources
          FROM access_requests WHERE id = ? FOR UPDATE`,
         [requestId]
       );
@@ -355,8 +480,158 @@ export const accessRequestService = {
         );
       }
 
-      // 1. Fetch profile and provision session
+      const isDecidingAdmin = decidingUser.roles.includes('admin');
+
+      // Check authority tier for table-level requests
+      if (accessReq.request_type === 'table') {
+        const isCriticalTable = ['Payroll', 'TaxRecords', 'SecurityAuditLogs'].includes(accessReq.target_table);
+        if (isCriticalTable && !isDecidingAdmin) {
+          throw new AppError(
+            `DBA is not authorized to approve critical sensitivity resources ('${accessReq.target_table}'). Approval is strictly restricted to Admin.`,
+            403,
+            'FORBIDDEN_APPROVAL_TIER'
+          );
+        }
+
+        // Check if user has an active session to attach grant to
+        const [activeSessions] = await conn.execute(
+          `SELECT id, user_id, profile_id, mysql_username, end_time, granted_operations, granted_resources
+           FROM db_sessions
+           WHERE user_id = ? AND status = 'active' AND end_time > NOW()
+           ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+          [accessReq.user_id]
+        );
+
+        const targetTable = accessReq.target_table;
+        const targetDb = accessReq.target_database || 'itds_db';
+        const fullTableIdentifier = `${targetDb}.${targetTable}`;
+        const ops = (typeof accessReq.requested_operations === 'string'
+          ? JSON.parse(accessReq.requested_operations)
+          : accessReq.requested_operations) || ['SELECT'];
+
+        let finalSessionId;
+        let sessionCredentials = null;
+
+        if (activeSessions.length > 0) {
+          // Dynamic Grant Attachment to existing active session
+          const activeSession = activeSessions[0];
+          finalSessionId = activeSession.id;
+
+          const currentResources = typeof activeSession.granted_resources === 'string'
+            ? JSON.parse(activeSession.granted_resources)
+            : activeSession.granted_resources;
+          const currentOps = typeof activeSession.granted_operations === 'string'
+            ? JSON.parse(activeSession.granted_operations)
+            : activeSession.granted_operations;
+
+          const updatedResources = [...new Set([...currentResources, fullTableIdentifier, targetTable])];
+          const updatedOps = [...new Set([...currentOps, ...ops])];
+
+          // Update active session grants
+          await conn.execute(
+            `UPDATE db_sessions
+             SET granted_resources = ?, granted_operations = ?
+             WHERE id = ?`,
+            [JSON.stringify(updatedResources), JSON.stringify(updatedOps), activeSession.id]
+          );
+
+          // Apply MySQL grants dynamically
+          const tableOps = ops.filter(op => ['SELECT', 'INSERT', 'UPDATE', 'DELETE'].includes(op));
+          if (tableOps.length > 0) {
+            const grantsList = tableOps.join(', ');
+            await conn.query(`GRANT ${grantsList} ON \`${targetDb}\`.\`${targetTable}\` TO '${activeSession.mysql_username}'@'%'`);
+            await conn.query(`GRANT ${grantsList} ON \`${targetDb}\`.\`${targetTable}\` TO '${activeSession.mysql_username}'@'localhost'`);
+            await conn.query('FLUSH PRIVILEGES');
+          }
+
+          // Update access request
+          await conn.execute(
+            `UPDATE access_requests
+             SET status = 'active',
+                 session_id = ?,
+                 approved_by = ?,
+                 approved_at = CURRENT_TIMESTAMP,
+                 activated_at = CURRENT_TIMESTAMP,
+                 expires_at = ?
+             WHERE id = ?`,
+            [activeSession.id, decidingUser.id, activeSession.end_time, requestId]
+          );
+        } else {
+          // Provision new session scoped to this approved table
+          const fallbackProfile = await profileService.getProfile(1);
+          const sessionResult = await sessionService.provisionSession({
+            requestId,
+            userId: accessReq.user_id,
+            profile: {
+              ...fallbackProfile,
+              name: `Table Grant: ${targetTable}`,
+              allowed_operations: ops,
+              resources: [{ db_name: targetDb, table_name: targetTable, sensitivity: isCriticalTable ? 'critical' : 'medium' }]
+            },
+            durationMinutes: accessReq.requested_duration_minutes
+          });
+
+          finalSessionId = sessionResult.sessionId;
+          sessionCredentials = sessionResult.credentials;
+          const endTime = new Date(Date.now() + accessReq.requested_duration_minutes * 60 * 1000);
+
+          await conn.execute(
+            `UPDATE access_requests
+             SET status = 'active',
+                 session_id = ?,
+                 approved_by = ?,
+                 approved_at = CURRENT_TIMESTAMP,
+                 activated_at = CURRENT_TIMESTAMP,
+                 expires_at = ?
+             WHERE id = ?`,
+            [finalSessionId, decidingUser.id, endTime, requestId]
+          );
+        }
+
+        await conn.execute(
+          `INSERT INTO approvals (request_id, decided_by, decision, comments) VALUES (?, ?, 'approved', ?)`,
+          [requestId, decidingUser.id, comments]
+        );
+
+        await conn.commit();
+
+        await auditService.log({
+          eventType: 'ACCESS_REQUEST_APPROVED',
+          userId: accessReq.user_id,
+          username: decidingUser.username,
+          status: 'SUCCESS',
+          details: {
+            requestId,
+            requestType: 'table',
+            targetTable,
+            sessionId: finalSessionId,
+            approvedBy: decidingUser.username,
+            comments
+          }
+        });
+
+        return {
+          success: true,
+          requestId,
+          sessionId: finalSessionId,
+          attached_to_existing_session: activeSessions.length > 0,
+          credentials: sessionCredentials
+        };
+      }
+
+      // Profile-level request approval flow
       const profile = await profileService.getProfile(accessReq.profile_id);
+
+      // Check if profile has critical resources (e.g. Executive Payroll & Compensation)
+      const hasCriticalResource = (profile.resources || []).some(r => r.sensitivity === 'critical');
+      if (hasCriticalResource && !isDecidingAdmin) {
+        throw new AppError(
+          `DBA is not authorized to approve critical sensitivity profiles. Approval must be granted by an Administrator.`,
+          403,
+          'FORBIDDEN_APPROVAL_TIER'
+        );
+      }
+
       const sessionResult = await sessionService.provisionSession({
         requestId,
         userId: accessReq.user_id,
@@ -366,7 +641,6 @@ export const accessRequestService = {
 
       const endTime = new Date(Date.now() + accessReq.requested_duration_minutes * 60 * 1000);
 
-      // 2. Update status and link session ID in access_requests
       await conn.execute(
         `UPDATE access_requests
          SET status = 'active',
@@ -379,7 +653,6 @@ export const accessRequestService = {
         [sessionResult.sessionId, decidingUser.id, endTime, requestId]
       );
 
-      // 3. Record approval record in approvals table
       await conn.execute(
         `INSERT INTO approvals (request_id, decided_by, decision, comments) VALUES (?, ?, 'approved', ?)`,
         [requestId, decidingUser.id, comments]
