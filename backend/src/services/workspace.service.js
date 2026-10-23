@@ -257,22 +257,24 @@ export const workspaceService = {
         : 'UNAUTHORIZED_QUERY';
 
       let explanation = policyResult.reasons?.[0];
-      if (primaryViolation === 'UNBOUNDED_BULK_READ') {
-        explanation = 'Unbounded read requires approval or a restrictive LIMIT clause';
-      } else if (primaryViolation === 'TABLE_OUT_OF_SCOPE') {
-        explanation = `Access to table(s) ${parsed.tables.join(', ')} is not permitted in active profile '${session.profile_name}'`;
-      } else if (primaryViolation === 'OPERATION_NOT_GRANTED') {
-        explanation = `Operation '${parsed.operation}' is not granted in active profile '${session.profile_name}'`;
-      } else if (primaryViolation === 'UNAUTHORIZED_DDL') {
-        explanation = `DDL schema alteration statements are prohibited in profile '${session.profile_name}'`;
-      } else if (primaryViolation === 'PROHIBITED_DESTRUCTIVE_DDL') {
-        explanation = 'Destructive DROP statements against production catalog tables are strictly prohibited by security policy';
-      } else if (primaryViolation === 'SYSTEM_SCHEMA_ACCESS_DENIED') {
-        explanation = 'Direct access to internal MySQL system schemas is prohibited';
-      } else if (primaryViolation === 'CROSS_SCHEMA_ACCESS') {
-        explanation = 'Query accesses resources across multiple distinct database schemas';
-      } else if (!explanation) {
-        explanation = 'Query execution was denied prior to database access by security policy';
+      if (!explanation) {
+        if (primaryViolation === 'UNBOUNDED_BULK_READ') {
+          explanation = 'Unbounded bulk read on sensitive data requires approval or a restrictive LIMIT clause';
+        } else if (primaryViolation === 'TABLE_OUT_OF_SCOPE') {
+          explanation = `Access to table(s) ${parsed.tables.join(', ')} is not permitted in active profile '${session.profile_name}'`;
+        } else if (primaryViolation === 'OPERATION_NOT_GRANTED') {
+          explanation = `Operation '${parsed.operation}' is not granted in active profile '${session.profile_name}'`;
+        } else if (primaryViolation === 'UNAUTHORIZED_DDL') {
+          explanation = `DDL schema alteration statements are prohibited in profile '${session.profile_name}'`;
+        } else if (primaryViolation === 'PROHIBITED_DESTRUCTIVE_DDL') {
+          explanation = 'Destructive DROP statements against production catalog tables are strictly prohibited by security policy';
+        } else if (primaryViolation === 'SYSTEM_SCHEMA_ACCESS_DENIED') {
+          explanation = 'Direct access to internal MySQL system schemas is prohibited';
+        } else if (primaryViolation === 'CROSS_SCHEMA_ACCESS') {
+          explanation = 'Query accesses resources across multiple distinct database schemas';
+        } else {
+          explanation = 'Query execution was denied prior to database access by security policy';
+        }
       }
 
       logger.warn(

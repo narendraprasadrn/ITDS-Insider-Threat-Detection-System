@@ -24,7 +24,8 @@ export const sessionService = {
   /**
    * Provision a temporary least-privilege MySQL user for an approved session
    */
-  async provisionSession({ requestId, userId, profile, durationMinutes }) {
+  async provisionSession({ requestId, userId, profile, durationMinutes, connection = null }) {
+    const conn = connection || pool;
     const randSuffix = crypto.randomBytes(3).toString('hex');
     const mysqlUsername = `jit_${requestId}_${randSuffix}`;
     const mysqlPassword = this.generatePassword(16);
@@ -61,7 +62,7 @@ export const sessionService = {
     const endTime = new Date(Date.now() + durationMinutes * 60 * 1000);
     const grantedResources = profile.resources.map(r => `${r.db_name}.${r.table_name}`);
 
-    const [sessionResult] = await pool.execute(
+    const [sessionResult] = await conn.execute(
       `INSERT INTO db_sessions (request_id, user_id, profile_id, status, end_time, mysql_username, mysql_password, granted_operations, granted_resources)
        VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
       [
@@ -92,6 +93,78 @@ export const sessionService = {
         durationMinutes
       }
     };
+  },
+
+  /**
+   * Get single active JIT session for a user (if any)
+   */
+  async getActiveSessionForUser(userId, connection = null) {
+    const conn = connection || pool;
+    const [rows] = await conn.query(
+      `SELECT s.id, s.request_id, s.user_id, s.profile_id, s.status, s.start_time, s.end_time,
+              s.mysql_username, s.granted_operations, s.granted_resources,
+              p.name AS profile_name, p.risk_level, p.max_rows_hint
+       FROM db_sessions s
+       JOIN access_profiles p ON s.profile_id = p.id
+       WHERE s.user_id = ? AND s.status = 'active' AND s.end_time > NOW()
+       ORDER BY s.id DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (rows.length === 0) return null;
+
+    const s = rows[0];
+    return {
+      ...s,
+      granted_operations: typeof s.granted_operations === 'string' ? JSON.parse(s.granted_operations) : (s.granted_operations || []),
+      granted_resources: typeof s.granted_resources === 'string' ? JSON.parse(s.granted_resources) : (s.granted_resources || [])
+    };
+  },
+
+  /**
+   * Internal helper to safely terminate an existing session during replacement
+   */
+  async terminateSessionInternal(sessionId, { decidingUser = null, reason = 'REPLACED_BY_NEW_SESSION', connection = null } = {}) {
+    const conn = connection || pool;
+    const [rows] = await conn.execute(
+      `SELECT id, request_id, mysql_username, user_id, status FROM db_sessions WHERE id = ? FOR UPDATE`,
+      [sessionId]
+    );
+    if (rows.length === 0) return false;
+    const s = rows[0];
+    if (s.status !== 'active') return false;
+
+    // Drop MySQL user and terminate connection threads
+    await this.dropMysqlUser(s.mysql_username);
+
+    // Update session record
+    await conn.execute(
+      `UPDATE db_sessions SET status = 'revoked', mysql_password = NULL WHERE id = ?`,
+      [sessionId]
+    );
+
+    // Update access request
+    await conn.execute(
+      `UPDATE access_requests SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP, revoked_by = ? WHERE id = ? OR session_id = ?`,
+      [decidingUser?.id || null, s.request_id, sessionId]
+    );
+
+    // Audit log termination
+    await auditService.log({
+      eventType: 'SESSION_REVOKED',
+      userId: s.user_id,
+      username: s.mysql_username,
+      status: 'WARNING',
+      details: {
+        sessionId,
+        requestId: s.request_id,
+        reason,
+        revokedBy: decidingUser?.username || 'system'
+      }
+    });
+
+    return true;
   },
 
   /**
@@ -387,7 +460,7 @@ export const sessionService = {
        FROM db_sessions s
        JOIN users u ON s.user_id = u.id
        JOIN access_profiles p ON s.profile_id = p.id
-       WHERE s.status = 'active'
+       WHERE s.status = 'active' AND s.end_time > NOW()
        ORDER BY s.end_time ASC`
     );
 

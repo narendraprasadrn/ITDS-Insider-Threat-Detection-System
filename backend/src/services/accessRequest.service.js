@@ -13,7 +13,7 @@ export const accessRequestService = {
    * - PENDING (if OPA indicates approval is required)
    * - DENIED (if OPA or RBAC denies)
    */
-  async createRequest({ user, profileId, requestedDurationMinutes, justification, timeOfDay: overrideTimeOfDay, req = null }) {
+  async createRequest({ user, profileId, requestedDurationMinutes, justification, timeOfDay: overrideTimeOfDay, replaceExisting = false, req = null }) {
     if (!profileId) {
       throw new AppError('Profile ID is required', 400, 'BAD_REQUEST');
     }
@@ -100,7 +100,209 @@ export const accessRequestService = {
     const requestedOpsJson = JSON.stringify(profile.allowed_operations || ['SELECT']);
     const requestedResJson = JSON.stringify(profile.resources.map(r => `${r.db_name}.${r.table_name}`));
 
-    // 6. Record request in database
+    // 6. Single Active Session Check & Transactional Lifecycle (for auto-approved sessions)
+    const isAdmin = user.roles.includes('admin');
+
+    if (initialStatus === 'active') {
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+
+        // Check for existing active sessions for this user with row-level lock
+        const [activeRows] = await conn.execute(
+          `SELECT s.id, s.request_id, s.user_id, s.profile_id, s.status, s.start_time, s.end_time,
+                  s.mysql_username, s.granted_operations, s.granted_resources,
+                  p.name AS profile_name, p.risk_level
+           FROM db_sessions s
+           JOIN access_profiles p ON s.profile_id = p.id
+           WHERE s.user_id = ? AND s.status = 'active' AND s.end_time > NOW()
+           ORDER BY s.id DESC
+           LIMIT 1 FOR UPDATE`,
+          [user.id]
+        );
+
+        let existingActiveSession = activeRows.length > 0 ? activeRows[0] : null;
+
+        if (existingActiveSession && !isAdmin) {
+          const activeOps = typeof existingActiveSession.granted_operations === 'string'
+            ? JSON.parse(existingActiveSession.granted_operations)
+            : (existingActiveSession.granted_operations || []);
+          const activeRes = typeof existingActiveSession.granted_resources === 'string'
+            ? JSON.parse(existingActiveSession.granted_resources)
+            : (existingActiveSession.granted_resources || []);
+
+          if (!replaceExisting) {
+            await conn.rollback();
+            conn.release();
+
+            const conflictErr = new AppError(
+              `User '${user.username}' already has an active JIT session (#${existingActiveSession.id} - ${existingActiveSession.profile_name}). Only one active session is permitted per user.`,
+              409,
+              'ACTIVE_SESSION_EXISTS',
+              {
+                existingSession: {
+                  id: existingActiveSession.id,
+                  profile_id: existingActiveSession.profile_id,
+                  profile_name: existingActiveSession.profile_name,
+                  mysql_username: existingActiveSession.mysql_username,
+                  database: 'itds_db',
+                  granted_operations: activeOps,
+                  granted_resources: activeRes,
+                  end_time: existingActiveSession.end_time
+                },
+                requestedProfile: {
+                  id: profile.id,
+                  name: profile.name,
+                  database: 'itds_db',
+                  allowed_operations: profile.allowed_operations,
+                  resources: profile.resources,
+                  duration_minutes: duration
+                }
+              }
+            );
+            conflictErr.existingSession = {
+              id: existingActiveSession.id,
+              profile_id: existingActiveSession.profile_id,
+              profile_name: existingActiveSession.profile_name,
+              mysql_username: existingActiveSession.mysql_username,
+              database: 'itds_db',
+              granted_operations: activeOps,
+              granted_resources: activeRes,
+              end_time: existingActiveSession.end_time
+            };
+            conflictErr.requestedProfile = {
+              id: profile.id,
+              name: profile.name,
+              database: 'itds_db',
+              allowed_operations: profile.allowed_operations,
+              resources: profile.resources,
+              duration_minutes: duration
+            };
+            throw conflictErr;
+          }
+        }
+
+        // Staged replacement: Create request record
+        const [result] = await conn.execute(
+          `INSERT INTO access_requests (
+             user_id, request_type, profile_id, requested_duration_minutes, justification,
+             status, decision_action, decision_reasons,
+             requested_operations, requested_resources
+           ) VALUES (?, 'profile', ?, ?, ?, 'active', ?, ?, ?, ?)`,
+          [
+            user.id,
+            profile.id,
+            duration,
+            finalJustification,
+            decision.action,
+            JSON.stringify(decision.reasons || []),
+            requestedOpsJson,
+            requestedResJson
+          ]
+        );
+
+        const requestId = result.insertId;
+
+        // If replacing an existing session, update old records to 'revoked' in the transaction first
+        // so that active_user_id is cleared and uk_user_single_active_session is satisfied.
+        // If subsequent provisioning fails, conn.rollback() restores the old session to 'active'!
+        if (existingActiveSession) {
+          await conn.execute(
+            `UPDATE db_sessions SET status = 'revoked', mysql_password = NULL WHERE id = ?`,
+            [existingActiveSession.id]
+          );
+          await conn.execute(
+            `UPDATE access_requests SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP WHERE id = ? OR session_id = ?`,
+            [existingActiveSession.request_id, existingActiveSession.id]
+          );
+        }
+
+        // Provision new MySQL user and store credentials.
+        // If this throws, conn.rollback() leaves existing session untouched!
+        const sessionResult = await sessionService.provisionSession({
+          requestId,
+          userId: user.id,
+          profile,
+          durationMinutes: duration,
+          connection: conn
+        });
+
+        // Drop old MySQL user after new credentials are created successfully
+        if (existingActiveSession) {
+          await sessionService.dropMysqlUser(existingActiveSession.mysql_username);
+        }
+
+        const endTime = new Date(Date.now() + duration * 60 * 1000);
+
+        // Update new access request with session link and timestamps
+        await conn.execute(
+          `UPDATE access_requests
+           SET session_id = ?,
+               approved_by = ?,
+               approved_at = CURRENT_TIMESTAMP,
+               activated_at = CURRENT_TIMESTAMP,
+               expires_at = ?
+           WHERE id = ?`,
+          [sessionResult.sessionId, user.id, endTime, requestId]
+        );
+
+        await conn.commit();
+        conn.release();
+
+        // Audit log termination of old session
+        if (existingActiveSession) {
+          await auditService.log({
+            eventType: 'SESSION_REVOKED',
+            userId: user.id,
+            username: user.username,
+            status: 'WARNING',
+            details: {
+              sessionId: existingActiveSession.id,
+              requestId: existingActiveSession.request_id,
+              reason: 'REPLACED_BY_NEW_SESSION',
+              replacedBySessionId: sessionResult.sessionId,
+              newProfileName: profile.name
+            },
+            req
+          });
+        }
+
+        // Audit log activation of new session
+        await auditService.log({
+          eventType: 'ACCESS_REQUEST_ACTIVATED',
+          userId: user.id,
+          username: user.username,
+          status: 'SUCCESS',
+          details: {
+            requestId,
+            sessionId: sessionResult.sessionId,
+            profileName: profile.name,
+            decisionAction: decision.action,
+            autoActivated: true,
+            replacedOldSessionId: existingActiveSession ? existingActiveSession.id : null
+          },
+          req
+        });
+
+        return {
+          status: 'active',
+          session_status: 'active',
+          requestId,
+          sessionId: sessionResult.sessionId,
+          replacedSessionId: existingActiveSession ? existingActiveSession.id : null,
+          decision,
+          credentials: sessionResult.credentials
+        };
+      } catch (err) {
+        if (conn) {
+          try { await conn.rollback(); } catch (_) {}
+          conn.release();
+        }
+        throw err;
+      }
+    }
+
+    // 7. For pending or denied requests, insert record into access_requests
     const [result] = await pool.execute(
       `INSERT INTO access_requests (
          user_id, request_type, profile_id, requested_duration_minutes, justification,
@@ -112,7 +314,7 @@ export const accessRequestService = {
         profile.id,
         duration,
         finalJustification,
-        initialStatus === 'active' ? 'approved' : initialStatus,
+        initialStatus,
         decision.action,
         JSON.stringify(decision.reasons || []),
         requestedOpsJson,
@@ -122,49 +324,14 @@ export const accessRequestService = {
 
     const requestId = result.insertId;
 
-    // Audit log request submission
     await auditService.log({
-      eventType: initialStatus === 'active' ? 'ACCESS_REQUEST_ACTIVATED' : 'ACCESS_REQUEST_SUBMITTED',
+      eventType: 'ACCESS_REQUEST_SUBMITTED',
       userId: user.id,
       username: user.username,
       status: initialStatus === 'denied' ? 'WARNING' : 'SUCCESS',
-      details: { requestId, profileName: profile.name, decisionAction: decision.action, autoActivated: initialStatus === 'active' },
+      details: { requestId, profileName: profile.name, decisionAction: decision.action },
       req
     });
-
-    // 7. If Auto-Approved by policy, provision JIT session immediately and activate
-    if (initialStatus === 'active') {
-      const sessionResult = await sessionService.provisionSession({
-        requestId,
-        userId: user.id,
-        profile,
-        durationMinutes: duration
-      });
-
-      const endTime = new Date(Date.now() + duration * 60 * 1000);
-
-      // Transition request status to 'active' with timestamps and session link
-      await pool.execute(
-        `UPDATE access_requests
-         SET status = 'active',
-             session_id = ?,
-             approved_by = ?,
-             approved_at = CURRENT_TIMESTAMP,
-             activated_at = CURRENT_TIMESTAMP,
-             expires_at = ?
-         WHERE id = ?`,
-        [sessionResult.sessionId, user.id, endTime, requestId]
-      );
-
-      return {
-        status: 'active',
-        session_status: 'active',
-        requestId,
-        sessionId: sessionResult.sessionId,
-        decision,
-        credentials: sessionResult.credentials
-      };
-    }
 
     // 8. If pending, check whether independent approvers exist in the system (other than requester)
     const hasCritical = profile.resources.some(r => r.sensitivity === 'critical');
@@ -632,12 +799,54 @@ export const accessRequestService = {
         );
       }
 
+      // Check if target user has an existing active session with lock
+      const [existingActiveRows] = await conn.execute(
+        `SELECT id, request_id, mysql_username, profile_id FROM db_sessions
+         WHERE user_id = ? AND status = 'active' AND end_time > NOW()
+         ORDER BY id DESC FOR UPDATE`,
+        [accessReq.user_id]
+      );
+
+      // Safely replace and terminate old session if one existed before inserting new session
+      if (existingActiveRows.length > 0) {
+        for (const oldSess of existingActiveRows) {
+          await conn.execute(
+            `UPDATE db_sessions SET status = 'revoked', mysql_password = NULL WHERE id = ?`,
+            [oldSess.id]
+          );
+          await conn.execute(
+            `UPDATE access_requests SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP WHERE id = ? OR session_id = ?`,
+            [oldSess.request_id, oldSess.id]
+          );
+        }
+      }
+
+      // Provision new session
       const sessionResult = await sessionService.provisionSession({
         requestId,
         userId: accessReq.user_id,
         profile,
-        durationMinutes: accessReq.requested_duration_minutes
+        durationMinutes: accessReq.requested_duration_minutes,
+        connection: conn
       });
+
+      if (existingActiveRows.length > 0) {
+        for (const oldSess of existingActiveRows) {
+          await sessionService.dropMysqlUser(oldSess.mysql_username);
+          await auditService.log({
+            eventType: 'SESSION_REVOKED',
+            userId: accessReq.user_id,
+            username: decidingUser.username,
+            status: 'WARNING',
+            details: {
+              sessionId: oldSess.id,
+              requestId: oldSess.request_id,
+              reason: 'REPLACED_BY_APPROVED_SESSION',
+              replacedBySessionId: sessionResult.sessionId
+            }
+          });
+        }
+      }
 
       const endTime = new Date(Date.now() + accessReq.requested_duration_minutes * 60 * 1000);
 

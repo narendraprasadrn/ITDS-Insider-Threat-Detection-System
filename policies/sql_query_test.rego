@@ -73,8 +73,8 @@ test_violation_table_out_of_scope if {
     "TABLE_OUT_OF_SCOPE" in res.violations
 }
 
-# Test 4: Flag violation for unbounded SELECT * (outcome: REVIEW)
-test_violation_unbounded_select_star if {
+# Test 4: Allow unbounded SELECT * on authorized table without requiring LIMIT clause
+test_allow_unbounded_select_star_on_authorized_table if {
     input_doc := {
         "session": {
             "granted_operations": ["SELECT"],
@@ -91,10 +91,9 @@ test_violation_unbounded_select_star if {
         }
     }
     res := query.result with input as input_doc
-    res.allow == false
-    res.outcome == "REVIEW"
-    res.authorized == true
-    "UNBOUNDED_BULK_READ" in res.violations
+    res.allow == true
+    res.outcome == "ALLOW"
+    count(res.violations) == 0
 }
 
 # Test 5: Flag violation for query on expired session

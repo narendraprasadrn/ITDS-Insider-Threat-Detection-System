@@ -95,6 +95,15 @@ export default function SessionsPage() {
   const [isDeciding, setIsDeciding] = useState(false);
   const [revokingId, setRevokingId] = useState(null);
 
+  // Single Active Session Conflict & Replacement Dialog
+  const [conflictDialog, setConflictDialog] = useState({
+    open: false,
+    existingSession: null,
+    requestedProfile: null,
+    requestedDuration: 60
+  });
+  const [replacing, setReplacing] = useState(false);
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
@@ -193,9 +202,24 @@ export default function SessionsPage() {
   // Employee Access Request Submit
   const handleRequestSubmit = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
     setError(null);
     setActionSuccess(null);
+
+    // 1. Client-side check for active session conflict
+    if (!isAdmin) {
+      const activeSession = mySessions.find(s => s.status === 'active' && new Date(s.end_time) > new Date());
+      if (activeSession) {
+        setConflictDialog({
+          open: true,
+          existingSession: activeSession,
+          requestedProfile: selectedProfile,
+          requestedDuration: requestForm.requested_duration_minutes
+        });
+        return;
+      }
+    }
+
+    setSubmitting(true);
 
     try {
       const res = await fetch('/api/access-requests', {
@@ -207,6 +231,16 @@ export default function SessionsPage() {
         body: JSON.stringify(requestForm)
       });
       const data = await res.json();
+
+      if (res.status === 409 || data.error?.code === 'ACTIVE_SESSION_EXISTS' || data.error?.existingSession) {
+        setConflictDialog({
+          open: true,
+          existingSession: data.error.existingSession,
+          requestedProfile: data.error.requestedProfile || selectedProfile,
+          requestedDuration: requestForm.requested_duration_minutes
+        });
+        return;
+      }
 
       if (!res.ok || !data.success) {
         throw new Error(data.error?.message || 'Access request rejected');
@@ -241,6 +275,62 @@ export default function SessionsPage() {
       setError(err.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Choice 1: Continue with existing session
+  const handleContinueExistingSession = () => {
+    const existingId = conflictDialog.existingSession?.id;
+    const existingProfile = conflictDialog.existingSession?.profile_name;
+    setConflictDialog({ open: false, existingSession: null, requestedProfile: null, requestedDuration: 60 });
+    setOpenRequestDialog(false);
+    setActionSuccess(`Continued with existing active Session #${existingId} (${existingProfile}). No new session was created.`);
+  };
+
+  // Choice 2: Safely replace existing session
+  const handleConfirmReplaceSession = async () => {
+    setReplacing(true);
+    setError(null);
+    setActionSuccess(null);
+
+    try {
+      const res = await fetch('/api/access-requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          ...requestForm,
+          replace_existing: true
+        })
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'Session replacement failed');
+      }
+
+      const oldSessId = conflictDialog.existingSession?.id;
+      setConflictDialog({ open: false, existingSession: null, requestedProfile: null, requestedDuration: 60 });
+      setOpenRequestDialog(false);
+
+      if ((data.data.status === 'active' || data.data.status === 'approved') && data.data.credentials) {
+        setCredentialsModal({
+          open: true,
+          credentials: data.data.credentials,
+          showPass: false
+        });
+        setActionSuccess(`Session #${oldSessId} was safely replaced. New JIT Session #${data.data.sessionId} activated!`);
+      } else if (data.data.status === 'pending') {
+        setActionSuccess(`Replacement access request #${data.data.requestId} submitted for approval.`);
+      }
+
+      fetchData();
+    } catch (err) {
+      setError(err.message || 'Session replacement failed');
+    } finally {
+      setReplacing(false);
     }
   };
 
@@ -1467,6 +1557,170 @@ export default function SessionsPage() {
           >
             {isDeciding ? 'Processing...' : `Confirm ${decisionDialog.type === 'approve' ? 'Approval' : 'Denial'}`}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ACTIVE JIT SESSION CONFLICT & REPLACEMENT DIALOG */}
+      <Dialog
+        open={conflictDialog.open}
+        onClose={() => !replacing && setConflictDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: '#171B1C',
+            border: '1px solid #F59E0B',
+            borderRadius: 2
+          }
+        }}
+      >
+        <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', gap: 1.5, color: '#FCD34D' }}>
+          <BootstrapIcon name="bi-exclamation-triangle-fill" size={24} color="#F59E0B" />
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            Active JIT Session Conflict
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Alert
+            severity="warning"
+            sx={{
+              mb: 2.5,
+              bgcolor: 'rgba(245, 158, 11, 0.1)',
+              color: '#FEF3C7',
+              border: '1px solid rgba(245, 158, 11, 0.4)'
+            }}
+          >
+            You already have an active Just-In-Time session. Under ITDS Zero-Trust policy, <b>each user may have only one active JIT session at a time</b>. Please choose whether to continue with your current session or safely replace it with the newly requested profile.
+          </Alert>
+
+          <Grid container spacing={2}>
+            {/* Existing Active Session */}
+            <Grid item xs={12} md={6}>
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  height: '100%',
+                  bgcolor: '#1F2527',
+                  borderColor: '#364345',
+                  borderRadius: 1.5
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <BootstrapIcon name="bi-clock-history" size={18} color="#55E6C1" />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#55E6C1' }}>
+                      Existing Active Session
+                    </Typography>
+                  </Box>
+                  <Chip label="CURRENT ACTIVE" size="small" sx={{ bgcolor: 'rgba(85, 230, 193, 0.2)', color: '#55E6C1', fontWeight: 700, height: 20, fontSize: '0.65rem' }} />
+                </Box>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <b>Session ID:</b> #{conflictDialog.existingSession?.id}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <b>Profile:</b> {conflictDialog.existingSession?.profile_name}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <b>Database Scope:</b> <code>itds_db</code>
+                </Typography>
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Granted Operations:
+                  </Typography>
+                  <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
+                    {(conflictDialog.existingSession?.granted_operations || []).map(op => (
+                      <Chip key={op} label={op} size="small" color="primary" sx={{ height: 20, fontSize: '0.68rem' }} />
+                    ))}
+                  </Stack>
+                </Box>
+                <Typography variant="caption" sx={{ color: '#FCD34D', display: 'block', mt: 1 }}>
+                  <b>Expires at:</b> {conflictDialog.existingSession?.end_time ? new Date(conflictDialog.existingSession.end_time).toLocaleString() : 'N/A'}
+                </Typography>
+              </Paper>
+            </Grid>
+
+            {/* Requested Replacement Session */}
+            <Grid item xs={12} md={6}>
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  height: '100%',
+                  bgcolor: '#1F2527',
+                  borderColor: '#F59E0B',
+                  borderRadius: 1.5
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <BootstrapIcon name="bi-arrow-repeat" size={18} color="#F59E0B" />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#FCD34D' }}>
+                      Requested New Profile
+                    </Typography>
+                  </Box>
+                  <Chip label="NEW PROFILE" size="small" sx={{ bgcolor: 'rgba(245, 158, 11, 0.2)', color: '#FCD34D', fontWeight: 700, height: 20, fontSize: '0.65rem' }} />
+                </Box>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <b>Profile:</b> {conflictDialog.requestedProfile?.name}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <b>Requested Duration:</b> {conflictDialog.requestedDuration || 60} minutes
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <b>Database Scope:</b> <code>itds_db</code>
+                </Typography>
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Profile Operations:
+                  </Typography>
+                  <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
+                    {(conflictDialog.requestedProfile?.allowed_operations || []).map(op => (
+                      <Chip key={op} label={op} size="small" color="warning" sx={{ height: 20, fontSize: '0.68rem' }} />
+                    ))}
+                  </Stack>
+                </Box>
+                <Typography variant="caption" sx={{ color: '#A6ADB4', display: 'block', mt: 1 }}>
+                  Existing session remains safely untouched if new session creation fails.
+                </Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between', bgcolor: '#141819', borderTop: '1px solid #283133' }}>
+          <Button
+            onClick={() => setConflictDialog(prev => ({ ...prev, open: false }))}
+            color="inherit"
+            disabled={replacing}
+            sx={{ textTransform: 'none' }}
+          >
+            Cancel
+          </Button>
+
+          <Stack direction="row" spacing={1.5}>
+            <Button
+              variant="outlined"
+              color="inherit"
+              startIcon={<BootstrapIcon name="bi-arrow-left-circle" />}
+              onClick={handleContinueExistingSession}
+              disabled={replacing}
+              sx={{ textTransform: 'none' }}
+            >
+              Continue with Existing Session
+            </Button>
+
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={replacing ? <CircularProgress size={16} color="inherit" /> : <BootstrapIcon name="bi-arrow-repeat" />}
+              onClick={handleConfirmReplaceSession}
+              disabled={replacing}
+              sx={{ textTransform: 'none', fontWeight: 700 }}
+            >
+              {replacing ? 'Replacing Session...' : 'Replace Existing Session'}
+            </Button>
+          </Stack>
         </DialogActions>
       </Dialog>
     </Box>

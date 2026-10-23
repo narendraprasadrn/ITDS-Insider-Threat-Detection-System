@@ -45,6 +45,8 @@ export function errorHandler(err, req, res, next) {
       code: errorCode,
       message,
       details,
+      existingSession: err.existingSession || details?.existingSession,
+      requestedProfile: err.requestedProfile || details?.requestedProfile,
       timestamp: new Date().toISOString()
     }
   });

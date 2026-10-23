@@ -113,7 +113,8 @@ async function runAcceptanceTests() {
     body: JSON.stringify({
       profile_id: 1, // Developer Read Profile
       requested_duration_minutes: 60,
-      justification: 'Automated test suite least-privilege verification session'
+      justification: 'Automated test suite least-privilege verification session',
+      replace_existing: true
     })
   });
   const devReqData = await devReqRes.json();
@@ -137,20 +138,20 @@ async function runAcceptanceTests() {
   assert(devGoodQueryRes.status === 200 && devGoodQueryData.success === true, 'Developer bounded read on Products allowed');
   assert(devGoodQueryData.data.rowCount > 0, `Returned ${devGoodQueryData.data.rowCount} real rows`);
 
-  // 7. Developer Unbounded Query Block
-  console.log('\n--> Step 7: Verifying Developer Unbounded Bulk Read Block');
+  // 7. Developer Authorized SELECT * Succeeded without Mandatory LIMIT
+  console.log('\n--> Step 7: Verifying Developer Authorized SELECT * Allowed without Mandatory LIMIT');
   const devUnboundedRes = await fetch(`${BASE_URL}/api/workspace/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${devToken}` },
     body: JSON.stringify({
       session_id: devSessionId,
-      sql: 'SELECT * FROM Customers;'
+      sql: 'SELECT * FROM Products;'
     })
   });
   const devUnboundedData = await devUnboundedRes.json();
-  assert(devUnboundedRes.status === 403, 'Developer SELECT * FROM Customers without LIMIT blocked with HTTP 403');
-  assert(devUnboundedData.data.blocked === true && devUnboundedData.data.rowCount === 0, 'Zero rows returned for unbounded read');
-  assert(devUnboundedData.data.rule === 'UNBOUNDED_BULK_READ', `Blocked by rule: ${devUnboundedData.data.rule}`);
+  assert(devUnboundedRes.status === 200, 'Developer SELECT * FROM Products without LIMIT allowed with HTTP 200');
+  assert(devUnboundedData.data.blocked === false && devUnboundedData.data.rowCount > 0, `Returned ${devUnboundedData.data.rowCount} rows for authorized table`);
+  assert(devUnboundedData.data.outcome === 'ALLOWED', `Execution outcome: ${devUnboundedData.data.outcome}`);
 
   // 8. Developer Out-of-Scope Single-Table Block
   console.log('\n--> Step 8: Verifying Developer Out-of-Scope Single-Table Block (Employees)');

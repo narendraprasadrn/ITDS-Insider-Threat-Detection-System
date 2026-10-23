@@ -40,27 +40,27 @@ import { useWorkspace } from '../context/WorkspaceContext.jsx';
 
 const SAMPLE_QUERIES = [
   {
-    name: 'Compliant Bounded Read (ALLOW)',
-    sql: "SELECT customer_code, name, customer_category, credit_limit FROM Customers WHERE customer_category = 'enterprise' LIMIT 5;"
+    name: 'Authorized Unbounded Read (ALLOW)',
+    sql: 'SELECT * FROM Products;'
   },
   {
     name: 'Authorized Bounded Read (ALLOW)',
-    sql: 'SELECT product_code, product_name, category, price FROM Products LIMIT 10;'
+    sql: 'SELECT * FROM Products LIMIT 100;'
   },
   {
-    name: 'Unbounded Read (Blocked by Policy)',
-    sql: 'SELECT * FROM Customers;'
-  },
-  {
-    name: 'Critical Data Scan (Blocked)',
+    name: 'Restricted Table Scope (Blocked)',
     sql: 'SELECT * FROM Payroll;'
+  },
+  {
+    name: 'Unauthorized Operation (Blocked)',
+    sql: 'DELETE FROM Products;'
   },
   {
     name: 'Multi-Table Out of Scope (Blocked)',
     sql: 'SELECT c.name, e.first_name FROM Customers c JOIN Employees e ON c.id = e.id;'
   },
   {
-    name: 'Unauthorized DDL / DROP (Blocked)',
+    name: 'Prohibited Destructive DDL (Blocked)',
     sql: 'DROP TABLE Customers;'
   },
   {
@@ -327,11 +327,12 @@ export default function WorkspacePage() {
 
       if ((res.status === 403 || !res.ok) && data.data?.blocked) {
         // Pre-Execution Policy Block (Zero rows returned)
+        setError(null);
         setExecutionResult({
           blocked: true,
           outcome: data.data.outcome || 'BLOCKED PRE-EXECUTION',
           rule: data.data.rule || data.data.policyDecision?.violations?.[0] || 'UNAUTHORIZED_QUERY',
-          explanation: data.data.explanation || data.data.policyDecision?.reasons?.[0] || data.data.message || 'Unbounded read requires approval or a restrictive LIMIT clause',
+          explanation: data.data.explanation || data.data.policyDecision?.reasons?.[0] || data.data.message || 'Query blocked by security policy',
           message: data.data.message || 'Query Blocked by Security Policy',
           eventId: data.data.eventId,
           sessionId: data.data.sessionId,
@@ -343,9 +344,11 @@ export default function WorkspacePage() {
           columns: []
         });
       } else if (!res.ok || !data.success) {
-        setError(data.error?.message || 'SQL execution failed');
+        setExecutionResult(null);
+        setError(`Database Error: ${data.error?.message || 'SQL execution failed'}`);
       } else {
         // Successful execution (ALLOWED or POST-EXECUTION DETECTED)
+        setError(null);
         setExecutionResult(data.data);
       }
 
@@ -414,8 +417,9 @@ export default function WorkspacePage() {
   if (isAdmin) {
     accessibleTables = catalogResources.map(r => r.table_name);
     restrictedTables = [];
-  } else if (activeSession && activeSession.granted_resources) {
-    const grantedList = (activeSession.granted_resources || []).map(r => (r.includes('.') ? r.split('.')[1] : r));
+  } else if ((selectedSession || activeSession) && (selectedSession?.granted_resources || activeSession?.granted_resources)) {
+    const currentGrants = selectedSession?.granted_resources || activeSession?.granted_resources || [];
+    const grantedList = currentGrants.map(r => (r.includes('.') ? r.split('.')[1] : r));
     accessibleTables = [...new Set(grantedList)];
     restrictedTables = catalogResources.filter(
       r => !accessibleTables.some(at => at.toLowerCase() === r.table_name.toLowerCase())
@@ -735,7 +739,7 @@ export default function WorkspacePage() {
                     key={t}
                     label={t}
                     size="small"
-                    onClick={() => setSqlQuery(`SELECT * FROM ${t} LIMIT 10;`)}
+                    onClick={() => setSqlQuery(`SELECT * FROM ${t};`)}
                     clickable
                     sx={{
                       height: 22,
@@ -823,7 +827,7 @@ export default function WorkspacePage() {
                 />
               </Box>
               <Typography variant="body2" sx={{ mt: 0.5, color: '#E2E8F0' }}>
-                {executionResult.explanation || executionResult.message || 'Unbounded read requires approval or a restrictive LIMIT clause.'}
+                {executionResult.explanation || executionResult.message || 'Query blocked by security policy.'}
               </Typography>
 
               {/* Actionable Request Access Button inside Blocked Alert for Table Out of Scope */}

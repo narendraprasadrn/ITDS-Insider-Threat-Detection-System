@@ -44,7 +44,17 @@ is_critical_resource_accessed if {
 
 table_in_granted_resources(table) if {
     some granted in input.session.granted_resources
+    lower(granted) == lower(table)
+}
+
+table_in_granted_resources(table) if {
+    some granted in input.session.granted_resources
     endswith(lower(granted), concat(".", ["", lower(table)]))
+}
+
+table_in_granted_resources(table) if {
+    some granted in input.session.granted_resources
+    endswith(lower(table), concat(".", ["", lower(granted)]))
 }
 
 # -------------------------------------------------------------
@@ -140,33 +150,7 @@ violations contains violation if {
     }
 }
 
-# Unbounded bulk read on standard application tables (severity: medium -> triggers REVIEW)
-violations contains violation if {
-    input.query.operation == "SELECT"
-    input.query.select_star == true
-    input.query.has_limit == false
-    not is_unbounded_read_exempt
-    not is_critical_resource_accessed
-    violation := {
-        "rule": "UNBOUNDED_BULK_READ",
-        "severity": "medium",
-        "reason": "Unbounded read requires approval or a restrictive LIMIT clause"
-    }
-}
-
-violations contains violation if {
-    input.query.operation == "SELECT"
-    input.query.has_limit == false
-    input.query.has_where == false
-    input.query.select_star == false
-    not is_unbounded_read_exempt
-    not is_critical_resource_accessed
-    violation := {
-        "rule": "UNBOUNDED_BULK_READ",
-        "severity": "medium",
-        "reason": "Unbounded read requires approval or a restrictive LIMIT clause"
-    }
-}
+# Unbounded bulk read is restricted only on critical sensitivity tables (e.g. Payroll, TaxRecords, SecurityAuditLogs)
 
 violations contains violation if {
     input.query.is_cross_schema == true
